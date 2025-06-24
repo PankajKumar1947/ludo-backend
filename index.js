@@ -36,11 +36,14 @@ app.get('/', (req, res) => {
 
 app.use('/api/v1/', authRouter);
 app.use('/api/v1/player', playerRouter);
+// new api router -> added in routes folder _
+
 
 // Initialize Socket.IO
 initSocket(server);
 
 
+// faltue -> kaam ka nahi hai
 app.post('/emit', (req, res) => {
   const { event, data } = req.body;
 
