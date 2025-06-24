@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+<body>
+  
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Socket.IO Test Client</title>
+</head>
+<body>
+  <h1>Socket.IO Client</h1>
+  <div id="log"></div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script>
+    const socket = io('http://localhost:3000');
+
+    socket.on('connect', () => {
+      log(`✅ Connected to server with id: ${socket.id}`);
+    });
+
+    socket.on('disconnect', () => {
+      log(`❌ Disconnected from server`);
+    });
+
+    socket.on('player:created', (data) => {
+      log(`🎮 player:created event received: ` + JSON.stringify(data));
+    });
+
+    socket.on('message', (msg) => {
+      log(`📩 message: ` + msg);
+    });
+
+    function log(message) {
+      const div = document.createElement('div');
+      div.textContent = message;
+      document.getElementById('log').appendChild(div);
+    }
+  </script>
+</body>
+</html>
