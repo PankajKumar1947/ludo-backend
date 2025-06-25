@@ -65,6 +65,30 @@ export const playerDetails = async (req, res) => {
       },
       {
         "bid_value": "20"
+      },
+      {
+        "bid_value": "30"
+      },
+      {
+        "bid_value": "40"
+      },
+      {
+        "bid_value": "50"
+      },
+      {
+        "bid_value": "60"
+      },
+      {
+        "bid_value": "70"
+      },
+      {
+        "bid_value": "80"
+      },
+      {
+        "bid_value": "90"
+      },
+      {
+        "bid_value": "100"
       }
     ];
 

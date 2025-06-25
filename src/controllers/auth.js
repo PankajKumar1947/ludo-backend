@@ -67,7 +67,7 @@ export const SigningIn = async (req, res) => {
         : "User logged in successfully",
       token,
       notice: "User Successfully Created !",
-      playerid: user_id,
+      playerid: user._id,
       username: email,
       pic_url: pic_url
     });
