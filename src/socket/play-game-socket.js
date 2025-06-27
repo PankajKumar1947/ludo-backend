@@ -1,85 +1,151 @@
 import { Server } from 'socket.io';
+import User from '../model/user.js';
 
-const rooms = {}; // In-memory store, consider persisting in DB later
+function generateRoomId() {
+  return Math.random().toString(36).substr(2, 6);
+}
+
+const rooms = {};
 
 export const setupSocket = (server) => {
   const io = new Server(server, {
     cors: {
-      origin: '*', // Set properly for prod
+      origin: '*',
       methods: ['GET', 'POST']
     }
   });
 
   io.on('connection', (socket) => {
-    console.log(`🔌 New connection: ${socket.id}`);
+    console.log(`🔌 Connected: ${socket.id}`);
 
-    // STEP 2 - Create Room
-    socket.on('create-room', ({ player_id }) => {
-      const roomId = Math.random().toString(36).substr(2, 6);
-      rooms[roomId] = {
-        players: [{ id: socket.id, name: player_id, bet: 0 }],
-        gameStarted: false,
-      };
-      socket.join(roomId);
-      socket.emit('message', `✅ Room ${roomId} created by ${player_id}`);
-      console.log(`🆕 Room created: ${roomId} by ${player_id}`);
+    // Start game vs BOT
+    socket.on('start-vs-bot', async ({ playerId, bet_amount }) => {
+      try {
+        const user = await User.findById(playerId);
+        if (!user || user.wallet < bet_amount) {
+          socket.emit('message', {
+            status: 'error',
+            message: '❌ Invalid user or insufficient balance'
+          });
+          return;
+        }
+
+        // Deduct wallet immediately
+        user.wallet -= bet_amount;
+        await user.save();
+
+        const roomId = generateRoomId();
+        const botId = `BOT_${roomId}`;
+
+        rooms[roomId] = {
+          players: [
+            { id: socket.id, name: user.first_name, playerId, isBot: false, bet: bet_amount },
+            { id: botId, name: 'BOT', isBot: true, bet: bet_amount }
+          ],
+          gameStarted: true,
+          currentTurnIndex: 0,
+          gameOver: false
+        };
+
+        socket.join(roomId);
+
+        socket.emit('room-id', { roomId });
+
+        io.to(roomId).emit('game-started', {
+          status: 'success',
+          players: rooms[roomId].players,
+          currentTurn: playerId,
+          message: '🚀 Game started vs BOT. Your turn 🎮'
+        });
+
+      } catch (err) {
+        console.error(err);
+        socket.emit('message', {
+          status: 'error',
+          message: '❌ Server error. Try again later.'
+        });
+      }
     });
 
-    // STEP 3 - Join Room
-    socket.on('join-room', ({ roomId, player_id, bet_amount }) => {
+    // Play Turn
+    socket.on('play-turn', ({ roomId, playerId }) => {
       const room = rooms[roomId];
-      if (!room || room.players.length >= 4) {
-        socket.emit('message', '❌ Room not found or full');
+      if (!room || room.gameOver) return;
+
+      const currentPlayer = room.players[room.currentTurnIndex];
+      if (currentPlayer.playerId !== playerId) {
+        socket.emit('message', {
+          status: 'error',
+          message: '❌ Not your turn'
+        });
         return;
       }
 
-      room.players.push({ id: socket.id, name: player_id, bet_amount });
-      socket.join(roomId);
-      io.to(roomId).emit('room-update', room.players);
-      io.to(roomId).emit('message', `🙋‍♂️ ${player_id} joined with ₹${bet_amount}`);
-      console.log(`🎮 ${player_id} joined room ${roomId}`);
+      const dice = Math.floor(Math.random() * 6) + 1;
+
+      io.to(roomId).emit('turn-played', {
+        playerId,
+        dice,
+        message: `🎲 ${currentPlayer.name} rolled a ${dice}`
+      });
+
+      room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
+
+      if (room.players[room.currentTurnIndex].isBot) {
+        setTimeout(() => handleBotTurn(io, roomId), 10000);
+      }
     });
 
-    // STEP 4 - Start Game
-    socket.on('start-game', ({ roomId }) => {
+    // Game Over
+    socket.on('game-over', async ({ roomId, winnerPlayerId }) => {
       const room = rooms[roomId];
-      if (!room || room.players.length < 2) {
-        socket.emit('message', '❌ Need at least 2 players to start');
-        return;
+      if (!room || room.gameOver) return;
+
+      room.gameOver = true;
+
+      const winner = room.players.find(p => p.playerId === winnerPlayerId);
+      if (!winner || winner.isBot) return;
+
+      const reward = room.players[0].bet + room.players[1].bet;
+      const user = await User.findById(winner.playerId);
+      if (user) {
+        user.wallet += reward;
+        await user.save();
       }
 
-      room.gameStarted = true;
-      io.to(roomId).emit('game-started', { players: room.players });
-      io.to(roomId).emit('message', '🚀 Game has started!');
-      console.log(`🚀 Game started in room ${roomId}`);
-    });
-
-    // STEP 5 - Play Turn
-    socket.on('play-turn', ({ roomId, playerId, dice }) => {
-      io.to(roomId).emit('turn-played', { playerId, dice });
-      io.to(roomId).emit('message', `🎲 Player ${playerId} rolled a ${dice}`);
-      console.log(`🎲 Player ${playerId} played dice: ${dice}`);
-    });
-
-    // STEP 6 - Leave Room
-    socket.on('leave-room', ({ roomId }) => {
-      const room = rooms[roomId];
-      if (!room) return;
-
-      const player = room.players.find(p => p.id === socket.id);
-      const name = player?.name || 'Unknown';
-
-      room.players = room.players.filter(p => p.id !== socket.id);
-      socket.leave(roomId);
-      io.to(roomId).emit('room-update', room.players);
-      io.to(roomId).emit('message', `🚪 ${name} left the room`);
-      console.log(`🚪 ${name} left room ${roomId}`);
+      io.to(roomId).emit('game-over', {
+        status: 'success',
+        winner: winner.name,
+        reward,
+        message: `🎉 ${winner.name} wins and earns ₹${reward}`
+      });
     });
 
     // Disconnect
     socket.on('disconnect', () => {
       console.log(`❌ Disconnected: ${socket.id}`);
-      // Optional: remove player from rooms
     });
+
+    // BOT Turn handler
+    function handleBotTurn(io, roomId) {
+      const room = rooms[roomId];
+      if (!room || room.gameOver) return;
+
+      const dice = Math.floor(Math.random() * 6) + 1;
+      const bot = room.players[room.currentTurnIndex];
+
+      io.to(roomId).emit('turn-played', {
+        playerId: bot.playerId,
+        dice,
+        message: `🤖 BOT rolled a ${dice}`
+      });
+
+      room.currentTurnIndex = 0;
+
+      io.to(roomId).emit('message', {
+        message: '🎮 Your turn!',
+        turn: 'player'
+      });
+    }
   });
 };
