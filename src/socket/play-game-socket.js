@@ -21,6 +21,7 @@ export const setupSocket = (server) => {
     // Start game vs BOT
     socket.on('start-vs-bot', async ({ playerId, bet_amount }) => {
       try {
+        console.log("start-vs-bot");
         const user = await User.findById(playerId);
         if (!user || user.wallet < bet_amount) {
           socket.emit('message', {
@@ -69,6 +70,7 @@ export const setupSocket = (server) => {
 
     // Play Turn
     socket.on('play-turn', ({ roomId, playerId }) => {
+      console.log("player-turn", roomId, playerId)
       const room = rooms[roomId];
       if (!room || room.gameOver) return;
 
@@ -128,6 +130,7 @@ export const setupSocket = (server) => {
 
     // BOT Turn handler
     function handleBotTurn(io, roomId) {
+      console.log("Bot Played")
       const room = rooms[roomId];
       if (!room || room.gameOver) return;
 
