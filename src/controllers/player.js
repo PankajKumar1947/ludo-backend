@@ -25,7 +25,7 @@ export const playerDetails = async (req, res) => {
       photo: player.pic_url,
       wincoin: 500,
       GamePlayed: 120,
-      totalcoin: 1500,
+      totalcoin: player.wallet,
       playcoin: "null",
       twoPlayWin: "30",
       FourPlayWin: 15,
