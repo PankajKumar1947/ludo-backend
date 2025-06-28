@@ -1,0 +1,15 @@
+# .github/workflows/ping-api.yml
+name: Ping Backend API Every 5 Minutes
+
+on:
+  schedule:
+    - cron: '*/2 * * * *' # Every 5 minutes (UTC)
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Hit the API
+        run: |
+          curl -X GET https://ludo-backend-v585.onrender.com
