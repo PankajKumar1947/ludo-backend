@@ -50,13 +50,48 @@ export const playerDetails = async (req, res) => {
       "bot_status": "1"
     };
 
+
+    const gameBidConstantValue = [
+      {
+        bid_value: 100,
+      },
+      {
+        bid_value: 200,
+      },
+      {
+        bid_value: 300,
+      },
+      {
+        bid_value: 400,
+      },
+      {
+        bid_value: 500,
+      },
+      {
+        bid_value: 600,
+      },
+      {
+        bid_value: 700,
+      },
+      {
+        bid_value: 800,
+      },
+      {
+        bid_value: 900,
+      },
+      {
+        bid_value: 1000,
+      }
+    ]
+
     res.status(200).json({
     success: true,
     message: "All Details Fetched Successfully",
     playerdata,
     gameconfig,
     shop_coin: player.shop_coin,
-    bidvalues: player.bidvalues
+    bidvalues: gameBidConstantValue,
+    playervidvalues: player.bidvalues
   });
 } catch (error) {
   console.log(error);

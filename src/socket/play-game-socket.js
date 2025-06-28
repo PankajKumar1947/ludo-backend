@@ -60,7 +60,8 @@ export const setupSocket = (server) => {
           status: 'success',
           players: rooms[roomId].players,
           currentTurn: playerId,
-          message: '🚀 Game started vs BOT. Your turn 🎮'
+          message: '🚀 Game started vs BOT. Your turn 🎮',
+          winning_amount: bet_amount*2 - bet_amount/10 
         });
 
       } catch (err) {

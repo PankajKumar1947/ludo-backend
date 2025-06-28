@@ -3,7 +3,7 @@ name: Ping Backend API Every 5 Minutes
 
 on:
   schedule:
-    - cron: '*/2 * * * *' # Every 5 minutes (UTC)
+    - cron: '*/5 * * * *' # Every 5 minutes (UTC)
 
 jobs:
   ping:
