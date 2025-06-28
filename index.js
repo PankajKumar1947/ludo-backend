@@ -27,6 +27,10 @@ dbConnect();
 
 // Routes
 app.get('/', (req, res) => res.send('Hello World!'));
+app.get("/test", (req, res) => {
+  console.log("automated test");
+  res.send("hello form test")
+})
 app.use('/api/v1/', authRouter);
 app.use('/api/v1/player', playerRouter);
 

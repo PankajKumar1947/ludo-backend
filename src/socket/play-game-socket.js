@@ -89,7 +89,7 @@ export const setupSocket = (server) => {
 
       const dice = Math.floor(Math.random() * 6) + 1;
 
-      io.to(roomId).emit('turn-played', {
+      io.to(roomId).emit('player-turn', {
         playerId,
         dice,
         message: `🎲 ${currentPlayer.name} rolled a ${dice}`
@@ -141,7 +141,7 @@ export const setupSocket = (server) => {
       const dice = Math.floor(Math.random() * 6) + 1;
       const bot = room.players[room.currentTurnIndex];
 
-      io.to(roomId).emit('turn-played', {
+      io.to(roomId).emit('bot-turn', {
         playerId: bot.playerId,
         dice,
         message: `🤖 BOT rolled a ${dice}`
