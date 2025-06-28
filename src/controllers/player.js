@@ -24,7 +24,7 @@ export const playerDetails = async (req, res) => {
       username: player.first_name,
       photo: player.pic_url,
       wincoin: 500,
-      GamePlayed: 120,
+      GamePlayed: player.bidvalues?.length,
       totalcoin: player.wallet,
       playcoin: "null",
       twoPlayWin: "30",
@@ -50,56 +50,13 @@ export const playerDetails = async (req, res) => {
       "bot_status": "1"
     };
 
-    const shop_coin = [
-      {
-        "shop_coin": "500"
-      },
-      {
-        "shop_coin": "1000"
-      }
-    ];
-
-    const bidvalues = [
-      {
-        "bid_value": "10"
-      },
-      {
-        "bid_value": "20"
-      },
-      {
-        "bid_value": "30"
-      },
-      {
-        "bid_value": "40"
-      },
-      {
-        "bid_value": "50"
-      },
-      {
-        "bid_value": "60"
-      },
-      {
-        "bid_value": "70"
-      },
-      {
-        "bid_value": "80"
-      },
-      {
-        "bid_value": "90"
-      },
-      {
-        "bid_value": "100"
-      }
-    ];
-
-
     res.status(200).json({
     success: true,
     message: "All Details Fetched Successfully",
     playerdata,
     gameconfig,
-    shop_coin,
-    bidvalues
+    shop_coin: player.shop_coin,
+    bidvalues: player.bidvalues
   });
 } catch (error) {
   console.log(error);

@@ -31,6 +31,10 @@ export const setupSocket = (server) => {
           return;
         }
 
+        user.bidvalues.push({
+          bid_value: bet_amount
+        })
+
         // Deduct wallet immediately
         user.wallet -= bet_amount;
         await user.save();
