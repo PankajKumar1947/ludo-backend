@@ -91,7 +91,7 @@ export const playerDetails = async (req, res) => {
     gameconfig,
     shop_coin: player.shop_coin,
     bidvalues: gameBidConstantValue,
-    playervidvalues: player.bidvalues
+    playervid_history: player.bidvalues
   });
 } catch (error) {
   console.log(error);
