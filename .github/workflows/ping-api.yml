@@ -12,4 +12,4 @@ jobs:
     steps:
       - name: Hit the API
         run: |
-          curl -X GET https://ludo-backend-v585.onrender.com
+          curl -X GET https://ludo-backend-v585.onrender.com/test

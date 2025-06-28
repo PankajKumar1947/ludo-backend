@@ -142,7 +142,7 @@ export const setupSocket = (server) => {
       const bot = room.players[room.currentTurnIndex];
 
       io.to(roomId).emit('bot-turn', {
-        playerId: bot.playerId,
+        playerId: bot.id,
         dice,
         message: `🤖 BOT rolled a ${dice}`
       });
