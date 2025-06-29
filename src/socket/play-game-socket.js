@@ -5,6 +5,9 @@ function generateRoomId() {
   return Math.random().toString(36).substr(2, 6);
 }
 
+const TOTAL_POSITIONS = 52;
+const HOME_POSITION = 57;
+
 const rooms = {};
 
 export const setupSocket = (server) => {
@@ -18,24 +21,16 @@ export const setupSocket = (server) => {
   io.on('connection', (socket) => {
     console.log(`🔌 Connected: ${socket.id}`);
 
-    // Start game vs BOT
     socket.on('start-vs-bot', async ({ playerId, bet_amount }) => {
       try {
-        console.log("start-vs-bot: playerid and bet_amount", playerId, bet_amount);
         const user = await User.findById(playerId);
         if (!user || user.wallet < bet_amount) {
-          socket.emit('message', {
+          return socket.emit('message', {
             status: 'error',
             message: '❌ Invalid user or insufficient balance'
           });
-          return;
         }
 
-        user.bidvalues.push({
-          bid_value: bet_amount
-        })
-
-        // Deduct wallet immediately
         user.wallet -= bet_amount;
         await user.save();
 
@@ -43,27 +38,72 @@ export const setupSocket = (server) => {
         const botId = `BOT_${roomId}`;
 
         rooms[roomId] = {
-          players: [
-            { id: socket.id, name: user.first_name, playerId, isBot: false, bet: bet_amount },
-            { id: botId, name: 'BOT', isBot: true, bet: bet_amount }
-          ],
-          gameStarted: true,
-          currentTurnIndex: 0,
+          players: {
+            player: {
+              id: socket.id,
+              name: user.first_name,
+              playerId,
+              isBot: false,
+              tokens: [null, null, null, null],
+              kills: 0,
+              completed: 0
+            },
+            bot: {
+              id: botId,
+              name: 'BOT',
+              isBot: true,
+              tokens: [null, null, null, null],
+              kills: 0,
+              completed: 0
+            }
+          },
+          turn: 'player',
+          bet: bet_amount,
           gameOver: false
         };
 
         socket.join(roomId);
-
         socket.emit('room-id', { roomId });
 
-        io.to(roomId).emit('game-started', {
-          status: 'success',
-          players: rooms[roomId].players,
-          currentTurn: playerId,
-          message: '🚀 Game started vs BOT. Your turn 🎮',
-          winning_amount: bet_amount*2 - bet_amount/10 
-        });
+        // Set 8-minute timeout
+        rooms[roomId].timeout = setTimeout(() => {
+          const room = rooms[roomId];
+          if (!room || room.gameOver) return;
 
+          const p1 = room.players.player;
+          const p2 = room.players.bot;
+
+          const calcScore = (p) =>
+            p.completed * 10 +
+            p.kills * 2 +
+            p.tokens.filter(t => t !== null && t !== HOME_POSITION).length;
+
+          const scorePlayer = calcScore(p1);
+          const scoreBot = calcScore(p2);
+
+          const winner = scorePlayer >= scoreBot ? p1 : p2;
+          room.gameOver = true;
+
+          if (!winner.isBot) {
+            User.findById(winner.playerId).then(user => {
+              if (user) {
+                user.wallet += room.bet * 2;
+                user.save();
+              }
+            });
+          }
+
+          io.to(roomId).emit('game-over', {
+            winner: winner.name,
+            message: `⏰ Time's up! ${winner.name} wins by score (${scorePlayer} vs ${scoreBot})`
+          });
+        }, 8 * 60 * 1000); // 8 minutes
+
+        io.to(roomId).emit('game-started', {
+          players: rooms[roomId].players,
+          turn: 'player',
+          message: '🎮 Game started vs BOT! Your turn.'
+        });
       } catch (err) {
         console.error(err);
         socket.emit('message', {
@@ -73,87 +113,130 @@ export const setupSocket = (server) => {
       }
     });
 
-    // Play Turn
-    socket.on('play-turn', ({ roomId, playerId }) => {
-      console.log("player-turn", roomId, playerId)
+    socket.on('roll-dice', ({ roomId, player }) => {
       const room = rooms[roomId];
-      if (!room || room.gameOver) return;
-
-      const currentPlayer = room.players[room.currentTurnIndex];
-      if (currentPlayer.playerId !== playerId) {
-        socket.emit('message', {
-          status: 'error',
-          message: '❌ Not your turn'
-        });
-        return;
-      }
+      if (!room || room.gameOver || room.turn !== player) return;
 
       const dice = Math.floor(Math.random() * 6) + 1;
+      io.to(roomId).emit('dice-rolled', { player, dice });
 
-      io.to(roomId).emit('player-turn', {
-        playerId,
-        dice,
-        message: `🎲 ${currentPlayer.name} rolled a ${dice}`
-      });
-
-      room.currentTurnIndex = (room.currentTurnIndex + 1) % 2;
-
-      if (room.players[room.currentTurnIndex].isBot) {
-        setTimeout(() => handleBotTurn(io, roomId), 10000);
+      if (player === 'bot') {
+        setTimeout(() => handleBotMove(roomId, dice), 1500);
       }
     });
 
-    // Game Over
-    socket.on('game-over', async ({ roomId, winnerPlayerId }) => {
+    socket.on('move-token', async ({ roomId, player, tokenIndex, dice }) => {
       const room = rooms[roomId];
-      if (!room || room.gameOver) return;
+      if (!room || room.gameOver || room.turn !== player) return;
 
-      room.gameOver = true;
+      const currentPlayer = room.players[player];
+      const opponent = player === 'player' ? room.players.bot : room.players.player;
+      let token = currentPlayer.tokens[tokenIndex];
 
-      const winner = room.players.find(p => p.playerId === winnerPlayerId);
-      if (!winner || winner.isBot) return;
-
-      const reward = room.players[0].bet + room.players[1].bet;
-      const user = await User.findById(winner.playerId);
-      if (user) {
-        user.wallet += reward;
-        await user.save();
+      if (token === null && dice !== 6) {
+        return socket.emit('message', {
+          status: 'error',
+          message: '❌ Roll a 6 to move a token out of base.'
+        });
       }
 
-      io.to(roomId).emit('game-over', {
-        status: 'success',
-        winner: winner.name,
-        reward,
-        message: `🎉 ${winner.name} wins and earns ₹${reward}`
+      // Move logic
+      if (token === null && dice === 6) token = 0;
+      else token += dice;
+
+      if (token > HOME_POSITION) token = HOME_POSITION;
+      if (token === HOME_POSITION) currentPlayer.completed++;
+
+      currentPlayer.tokens[tokenIndex] = token;
+
+      // Kill check
+      for (let i = 0; i < 4; i++) {
+        if (
+          opponent.tokens[i] !== null &&
+          opponent.tokens[i] === token &&
+          token !== HOME_POSITION
+        ) {
+          opponent.tokens[i] = null;
+          currentPlayer.kills++;
+
+          io.to(roomId).emit('token-killed', {
+            killer: player,
+            victim: player === 'player' ? 'bot' : 'player',
+            position: token,
+            message: `💥 ${currentPlayer.name} killed opponent's token at ${token}`
+          });
+        }
+      }
+
+      io.to(roomId).emit('token-moved', {
+        player,
+        tokenIndex,
+        newPosition: token,
+        tokens: currentPlayer.tokens
       });
+
+      // Win check
+      if (currentPlayer.completed === 4) {
+        clearTimeout(room.timeout);
+        room.gameOver = true;
+
+        if (!currentPlayer.isBot) {
+          const user = await User.findById(currentPlayer.playerId);
+          if (user) {
+            user.wallet += room.bet * 2;
+            await user.save();
+          }
+        }
+
+        return io.to(roomId).emit('game-over', {
+          winner: currentPlayer.name,
+          message: `🎉 ${currentPlayer.name} wins the game!`
+        });
+      }
+
+      if (dice !== 6) room.turn = player === 'player' ? 'bot' : 'player';
+
+      if (room.turn === 'bot') {
+        const botDice = Math.floor(Math.random() * 6) + 1;
+        io.to(roomId).emit('dice-rolled', { player: 'bot', dice: botDice });
+        setTimeout(() => handleBotMove(roomId, botDice), 1500);
+      }
     });
 
-    // Disconnect
     socket.on('disconnect', () => {
       console.log(`❌ Disconnected: ${socket.id}`);
     });
 
-    // BOT Turn handler
-    function handleBotTurn(io, roomId) {
-      console.log("Bot Played with room id", roomId)
+    async function handleBotMove(roomId, dice) {
       const room = rooms[roomId];
       if (!room || room.gameOver) return;
 
-      const dice = Math.floor(Math.random() * 6) + 1;
-      const bot = room.players[room.currentTurnIndex];
+      const bot = room.players.bot;
 
-      io.to(roomId).emit('bot-turn', {
-        playerId: bot.id,
-        dice,
-        message: `🤖 BOT rolled a ${dice}`
-      });
+      let indexToMove = -1;
+      for (let i = 0; i < 4; i++) {
+        const token = bot.tokens[i];
+        if (token === null && dice === 6) {
+          indexToMove = i;
+          break;
+        } else if (token !== null && token + dice <= HOME_POSITION) {
+          indexToMove = i;
+          break;
+        }
+      }
 
-      room.currentTurnIndex = 0;
-
-      io.to(roomId).emit('message', {
-        message: '🎮 Your turn!',
-        turn: 'player'
-      });
+      if (indexToMove !== -1) {
+        const moveData = {
+          roomId,
+          player: 'bot',
+          tokenIndex: indexToMove,
+          dice
+        };
+        socket.emit('move-token', moveData);
+      } else {
+        room.turn = 'player';
+        io.to(roomId).emit('message', { message: '🎮 Your turn!' });
+      }
     }
   });
 };
