@@ -46,7 +46,8 @@ export const setupSocket = (server) => {
               isBot: false,
               tokens: [null, null, null, null],
               kills: 0,
-              completed: 0
+              completed: 0,
+              totalPoints: 0
             },
             bot: {
               id: botId,
@@ -54,7 +55,8 @@ export const setupSocket = (server) => {
               isBot: true,
               tokens: [null, null, null, null],
               kills: 0,
-              completed: 0
+              completed: 0,
+              totalPoints: 0
             }
           },
           turn: 'player',
@@ -101,7 +103,7 @@ export const setupSocket = (server) => {
 
         io.to(roomId).emit('game-started', {
           players: rooms[roomId].players,
-          winning_amount: 2*bet_amount - bet_amount/5,
+          winning_amount: 2 * bet_amount - bet_amount / 5,
           turn: 'player',
           message: '🎮 Game started vs BOT! Your turn.'
         });
@@ -168,11 +170,15 @@ export const setupSocket = (server) => {
         }
       }
 
+      const activeTokens = currentPlayer.tokens.filter(t => t !== null && t !== HOME_POSITION);
+      const totalPoints = currentPlayer.completed * 10 + currentPlayer.kills * 2 + activeTokens.length;
+
       io.to(roomId).emit('token-moved', {
         player,
         tokenIndex,
         newPosition: token,
-        tokens: currentPlayer.tokens
+        tokens: currentPlayer.tokens,
+        totalPoints
       });
 
       // Check win
@@ -203,7 +209,7 @@ export const setupSocket = (server) => {
       }
     });
 
-    socket.on('disconnect', async () => {
+    socket.on('discon', async () => {
       console.log(`❌ Disconnected: ${socket.id}`);
 
       const roomId = Object.keys(rooms).find(r => rooms[r].players.player.id === socket.id);
@@ -254,7 +260,6 @@ export const setupSocket = (server) => {
 
       bot.tokens[indexToMove] = token;
 
-      // Kill
       for (let i = 0; i < 4; i++) {
         if (
           player.tokens[i] !== null &&
@@ -273,14 +278,17 @@ export const setupSocket = (server) => {
         }
       }
 
+      const activeTokens = bot.tokens.filter(t => t !== null && t !== HOME_POSITION);
+      const totalPoints = bot.completed * 10 + bot.kills * 2 + activeTokens.length;
+
       io.to(roomId).emit('token-moved', {
         player: 'bot',
         tokenIndex: indexToMove,
         newPosition: token,
-        tokens: bot.tokens
+        tokens: bot.tokens,
+        totalPoints
       });
 
-      // Check win
       if (bot.completed === 4) {
         clearTimeout(room.timeout);
         room.gameOver = true;
