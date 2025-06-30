@@ -59,13 +59,13 @@ export const setupSocket = (server) => {
           },
           turn: 'player',
           bet: bet_amount,
-          gameOver: false
+          gameOver: false,
         };
 
         socket.join(roomId);
         socket.emit('room-id', { roomId });
 
-        // Set 8-minute timeout
+        // Timeout auto-finish
         rooms[roomId].timeout = setTimeout(() => {
           const room = rooms[roomId];
           if (!room || room.gameOver) return;
@@ -97,10 +97,11 @@ export const setupSocket = (server) => {
             winner: winner.name,
             message: `⏰ Time's up! ${winner.name} wins by score (${scorePlayer} vs ${scoreBot})`
           });
-        }, 8 * 60 * 1000); // 8 minutes
+        }, 30 * 60 * 1000); // 30 minutes
 
         io.to(roomId).emit('game-started', {
           players: rooms[roomId].players,
+          winning_amount: 2*bet_amount - bet_amount/5,
           turn: 'player',
           message: '🎮 Game started vs BOT! Your turn.'
         });
@@ -140,7 +141,6 @@ export const setupSocket = (server) => {
         });
       }
 
-      // Move logic
       if (token === null && dice === 6) token = 0;
       else token += dice;
 
@@ -149,7 +149,7 @@ export const setupSocket = (server) => {
 
       currentPlayer.tokens[tokenIndex] = token;
 
-      // Kill check
+      // Kill opponent
       for (let i = 0; i < 4; i++) {
         if (
           opponent.tokens[i] !== null &&
@@ -175,7 +175,7 @@ export const setupSocket = (server) => {
         tokens: currentPlayer.tokens
       });
 
-      // Win check
+      // Check win
       if (currentPlayer.completed === 4) {
         clearTimeout(room.timeout);
         room.gameOver = true;
@@ -203,8 +203,21 @@ export const setupSocket = (server) => {
       }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       console.log(`❌ Disconnected: ${socket.id}`);
+
+      const roomId = Object.keys(rooms).find(r => rooms[r].players.player.id === socket.id);
+      const room = rooms[roomId];
+
+      if (room && !room.gameOver) {
+        clearTimeout(room.timeout);
+        room.gameOver = true;
+
+        io.to(roomId).emit('game-over', {
+          winner: 'BOT',
+          message: `🤖 Player disconnected. BOT wins the game!`
+        });
+      }
     });
 
     async function handleBotMove(roomId, dice) {
@@ -212,6 +225,7 @@ export const setupSocket = (server) => {
       if (!room || room.gameOver) return;
 
       const bot = room.players.bot;
+      const player = room.players.player;
 
       let indexToMove = -1;
       for (let i = 0; i < 4; i++) {
@@ -225,17 +239,65 @@ export const setupSocket = (server) => {
         }
       }
 
-      if (indexToMove !== -1) {
-        const moveData = {
-          roomId,
-          player: 'bot',
-          tokenIndex: indexToMove,
-          dice
-        };
-        socket.emit('move-token', moveData);
-      } else {
+      if (indexToMove === -1) {
         room.turn = 'player';
         io.to(roomId).emit('message', { message: '🎮 Your turn!' });
+        return;
+      }
+
+      let token = bot.tokens[indexToMove];
+      if (token === null && dice === 6) token = 0;
+      else token += dice;
+
+      if (token > HOME_POSITION) token = HOME_POSITION;
+      if (token === HOME_POSITION) bot.completed++;
+
+      bot.tokens[indexToMove] = token;
+
+      // Kill
+      for (let i = 0; i < 4; i++) {
+        if (
+          player.tokens[i] !== null &&
+          player.tokens[i] === token &&
+          token !== HOME_POSITION
+        ) {
+          player.tokens[i] = null;
+          bot.kills++;
+
+          io.to(roomId).emit('token-killed', {
+            killer: 'bot',
+            victim: 'player',
+            position: token,
+            message: `💥 BOT killed your token at ${token}`
+          });
+        }
+      }
+
+      io.to(roomId).emit('token-moved', {
+        player: 'bot',
+        tokenIndex: indexToMove,
+        newPosition: token,
+        tokens: bot.tokens
+      });
+
+      // Check win
+      if (bot.completed === 4) {
+        clearTimeout(room.timeout);
+        room.gameOver = true;
+
+        return io.to(roomId).emit('game-over', {
+          winner: 'BOT',
+          message: `🤖 BOT wins the game!`
+        });
+      }
+
+      if (dice !== 6) {
+        room.turn = 'player';
+        io.to(roomId).emit('message', { message: '🎮 Your turn!' });
+      } else {
+        const nextDice = Math.floor(Math.random() * 6) + 1;
+        io.to(roomId).emit('dice-rolled', { player: 'bot', dice: nextDice });
+        setTimeout(() => handleBotMove(roomId, nextDice), 1500);
       }
     }
   });
