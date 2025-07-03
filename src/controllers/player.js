@@ -1,4 +1,5 @@
 import user from "../model/user.js";
+import history from "../model/history.js";
 
 export const playerDetails = async (req, res) => {
   try {
@@ -85,19 +86,66 @@ export const playerDetails = async (req, res) => {
     ]
 
     res.status(200).json({
-    success: true,
-    message: "All Details Fetched Successfully",
-    playerdata,
-    gameconfig,
-    shop_coin: player.shop_coin,
-    bidvalues: gameBidConstantValue,
-    playervid_history: player.bidvalues
-  });
-} catch (error) {
-  console.log(error);
-  res.status(500).json({
-    success: false,
-    message: "Failed to fetch player details",
-  });
-}
+      success: true,
+      message: "All Details Fetched Successfully",
+      playerdata,
+      gameconfig,
+      shop_coin: player.shop_coin,
+      bidvalues: gameBidConstantValue,
+      playervid_history: player.bidvalues
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch player details",
+    });
+  }
+};
+
+export const playerHistory = async (req, res) => {
+  try {
+    const {
+      playerid,
+      status,
+      bid_amount,
+      Win_amount,
+      loss_amount,
+      seat_limit,
+      oppo1,
+      oppo2,
+      oppo3
+    } = req.body;
+
+    // Check if user exists using user_id field, not _id
+    const userExist = await user.findById(playerid);
+
+    if (!userExist) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Create a new history entry
+    const newHistory = new history({
+      playerid,
+      status,
+      bid_amount,
+      Win_amount,
+      loss_amount,
+      seat_limit,
+      oppo1,
+      oppo2,
+      oppo3
+    });
+
+    await newHistory.save();
+
+    res.status(201).json({
+      message: "Player history saved successfully",
+      data: newHistory
+    });
+
+  } catch (error) {
+    console.error("Error in playerHistory:", error);
+    res.status(500).json({ message: "Server error" });
+  }
 };
