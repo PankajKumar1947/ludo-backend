@@ -46,7 +46,7 @@ export const playerDetails = async (req, res) => {
       "telegram_link": "https://t.me/...",
       "website_url": "https://example.com",
       "pemail": "contact@example.com",
-      "commission": "5.5",
+      "commission": "10.0",
       "bot_status": "1"
     };
 

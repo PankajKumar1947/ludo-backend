@@ -103,7 +103,7 @@ export const setupSocket = (server) => {
 
         io.to(roomId).emit('game-started', {
           players: rooms[roomId].players,
-          winning_amount: 2 * bet_amount - bet_amount / 5,
+          winning_amount: 2 * bet_amount - bet_amount / 10,
           turn: 'player',
           message: '🎮 Game started vs BOT! Your turn.'
         });
