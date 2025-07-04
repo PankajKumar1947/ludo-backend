@@ -10,15 +10,9 @@ const HOME_POSITION = 57;
 
 const rooms = {};
 
-export const setupSocket = (server) => {
-  const io = new Server(server, {
-    cors: {
-      origin: '*',
-      methods: ['GET', 'POST']
-    }
-  });
+export const setupSocket = (namespace) => {
 
-  io.on('connection', (socket) => {
+  namespace.on('connection', (socket) => {
     console.log(`🔌 Connected: ${socket.id}`);
 
     socket.on('start-vs-bot', async ({ playerId, bet_amount }) => {
@@ -95,15 +89,15 @@ export const setupSocket = (server) => {
             });
           }
 
-          io.to(roomId).emit('game-over', {
+          namespace.to(roomId).emit('game-over', {
             winner: winner.name,
             message: `⏰ Time's up! ${winner.name} wins by score (${scorePlayer} vs ${scoreBot})`
           });
         }, 30 * 60 * 1000); // 30 minutes
 
-        io.to(roomId).emit('game-started', {
+        namespace.to(roomId).emit('game-started', {
           players: rooms[roomId].players,
-          winning_amount: 2 * bet_amount - bet_amount / 10,
+          winning_amount: 2 * bet_amount - 2*bet_amount / 10,
           turn: 'player',
           message: '🎮 Game started vs BOT! Your turn.'
         });
@@ -121,7 +115,7 @@ export const setupSocket = (server) => {
       if (!room || room.gameOver || room.turn !== player) return;
 
       const dice = Math.floor(Math.random() * 6) + 1;
-      io.to(roomId).emit('dice-rolled', { player, dice });
+      namespace.to(roomId).emit('dice-rolled', { player, dice });
 
       if (player === 'bot') {
         setTimeout(() => handleBotMove(roomId, dice), 1500);
@@ -161,7 +155,7 @@ export const setupSocket = (server) => {
           opponent.tokens[i] = null;
           currentPlayer.kills++;
 
-          io.to(roomId).emit('token-killed', {
+          namespace.to(roomId).emit('token-killed', {
             killer: player,
             victim: player === 'player' ? 'bot' : 'player',
             position: token,
@@ -173,7 +167,7 @@ export const setupSocket = (server) => {
       const activeTokens = currentPlayer.tokens.filter(t => t !== null && t !== HOME_POSITION);
       const totalPoints = currentPlayer.completed * 10 + currentPlayer.kills * 2 + activeTokens.length;
 
-      io.to(roomId).emit('token-moved', {
+      namespace.to(roomId).emit('token-moved', {
         player,
         tokenIndex,
         newPosition: token,
@@ -194,7 +188,7 @@ export const setupSocket = (server) => {
           }
         }
 
-        return io.to(roomId).emit('game-over', {
+        return namespace.to(roomId).emit('game-over', {
           winner: currentPlayer.name,
           message: `🎉 ${currentPlayer.name} wins the game!`
         });
@@ -204,7 +198,7 @@ export const setupSocket = (server) => {
 
       if (room.turn === 'bot') {
         const botDice = Math.floor(Math.random() * 6) + 1;
-        io.to(roomId).emit('dice-rolled', { player: 'bot', dice: botDice });
+        namespace.to(roomId).emit('dice-rolled', { player: 'bot', dice: botDice });
         setTimeout(() => handleBotMove(roomId, botDice), 1500);
       }
     });
@@ -219,7 +213,7 @@ export const setupSocket = (server) => {
         clearTimeout(room.timeout);
         room.gameOver = true;
 
-        io.to(roomId).emit('game-over', {
+        namespace.to(roomId).emit('game-over', {
           winner: 'BOT',
           message: `🤖 Player disconnected. BOT wins the game!`
         });
@@ -247,7 +241,7 @@ export const setupSocket = (server) => {
 
       if (indexToMove === -1) {
         room.turn = 'player';
-        io.to(roomId).emit('message', { message: '🎮 Your turn!' });
+        namespace.to(roomId).emit('message', { message: '🎮 Your turn!' });
         return;
       }
 
@@ -269,7 +263,7 @@ export const setupSocket = (server) => {
           player.tokens[i] = null;
           bot.kills++;
 
-          io.to(roomId).emit('token-killed', {
+          namespace.to(roomId).emit('token-killed', {
             killer: 'bot',
             victim: 'player',
             position: token,
@@ -281,7 +275,7 @@ export const setupSocket = (server) => {
       const activeTokens = bot.tokens.filter(t => t !== null && t !== HOME_POSITION);
       const totalPoints = bot.completed * 10 + bot.kills * 2 + activeTokens.length;
 
-      io.to(roomId).emit('token-moved', {
+      namespace.to(roomId).emit('token-moved', {
         player: 'bot',
         tokenIndex: indexToMove,
         newPosition: token,
@@ -293,7 +287,7 @@ export const setupSocket = (server) => {
         clearTimeout(room.timeout);
         room.gameOver = true;
 
-        return io.to(roomId).emit('game-over', {
+        return namespace.to(roomId).emit('game-over', {
           winner: 'BOT',
           message: `🤖 BOT wins the game!`
         });
@@ -301,10 +295,10 @@ export const setupSocket = (server) => {
 
       if (dice !== 6) {
         room.turn = 'player';
-        io.to(roomId).emit('message', { message: '🎮 Your turn!' });
+        namespace.to(roomId).emit('message', { message: '🎮 Your turn!' });
       } else {
         const nextDice = Math.floor(Math.random() * 6) + 1;
-        io.to(roomId).emit('dice-rolled', { player: 'bot', dice: nextDice });
+        namespace.to(roomId).emit('dice-rolled', { player: 'bot', dice: nextDice });
         setTimeout(() => handleBotMove(roomId, nextDice), 1500);
       }
     }
