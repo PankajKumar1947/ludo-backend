@@ -9,8 +9,7 @@ import authRouter from './src/routes/auth.js';
 import playerRouter from './src/routes/player.js';
 
 import { Server } from 'socket.io';
-import { setupSocket } from './src/socket/play-game-socket.js';
-import { setupFourPlayerGameSocket } from './src/socket/four-player-game.js';
+import { setupUnifiedGameSocket } from './src/socket/play-game-socket.js';
 
 const app = express();
 const server = http.createServer(app);
@@ -30,6 +29,13 @@ dbConnect();
 app.get('/', (req, res) => res.send('Hello World!'));
 app.use('/api/v1/', authRouter);
 app.use('/api/v1/player', playerRouter);
+app.get('/', (req, res) => res.send('Hello World!'));
+
+// for automated test
+app.get("/test", (req, res) => {
+  console.log("automated test");
+  res.send("hello form test")
+})
 
 // Create main io instance
 const io = new Server(server, {
@@ -39,11 +45,7 @@ const io = new Server(server, {
   },
 });
 
-// Default namespace: 1 vs BOT
-setupSocket(io.of('/'));
-
-// Custom namespace: /four => 4-player game
-setupFourPlayerGameSocket(io.of('/four'));
+setupUnifiedGameSocket(io.of('/'));
 
 server.listen(port, () => {
   console.log(`🚀 Server listening on port ${port}`);
