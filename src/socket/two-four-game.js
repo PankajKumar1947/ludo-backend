@@ -47,6 +47,7 @@ export const setupUnifiedGameSocket = (namespace) => {
             bot: {
               id: botId,
               name: 'BOT',
+              playerId: botId,
               isBot: true,
               tokens: [null, null, null, null],
               kills: 0,
@@ -132,9 +133,11 @@ export const setupUnifiedGameSocket = (namespace) => {
             if (!room || room.started) return;
 
             while (room.players.length < 4) {
+              const botId = `BOT_${generateRoomId()}`;
               room.players.push({
-                id: `BOT_${generateRoomId()}`,
+                id: botId,
                 name: `BOT_${room.players.length + 1}`,
+                playerId: botId,
                 isBot: true,
                 tokens: [null, null, null, null],
                 kills: 0,
@@ -209,14 +212,11 @@ export const setupUnifiedGameSocket = (namespace) => {
       const room = rooms[roomId] || rooms4[roomId];
       if (!room || room.gameOver) return;
 
-      const player = room.players?.playerId === playerId
-        ? room.players
-        : room.players?.find?.(p => p.playerId === playerId);
+      const playerList = room.players?.player ? Object.values(room.players) : room.players;
+      const player = playerList.find(p => p.playerId === playerId);
 
-      if (player && !player.isBot) {
-        if (totalPoints >= 0 && totalPoints <= MAX_SCORE_LIMIT) {
-          player.totalPoints = totalPoints;
-        }
+      if (player && totalPoints >= 0 && totalPoints <= MAX_SCORE_LIMIT) {
+        player.totalPoints = totalPoints;
       }
     });
 

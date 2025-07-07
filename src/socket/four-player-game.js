@@ -1,5 +1,3 @@
-// File: src/socket/four-player-game.js
-
 import User from '../model/user.js';
 
 const TOTAL_POSITIONS = 52;
@@ -15,7 +13,7 @@ export const setupFourPlayerGameSocket = (namespace) => {
   namespace.on('connection', (socket) => {
     console.log(`🔌 Connected to 4-player namespace: ${socket.id}`);
 
-    socket.on('join-game', async ({ playerId, bet_amount }) => {
+    socket.on('join-4p-game', async ({ playerId, bet_amount }) => {
       try {
         const user = await User.findById(playerId);
         if (!user || user.wallet < bet_amount) {
@@ -95,7 +93,7 @@ export const setupFourPlayerGameSocket = (namespace) => {
       }
     });
 
-    socket.on('roll-dice', ({ roomId, playerId }) => {
+    socket.on('roll-dice-4p', ({ roomId, playerId }) => {
       const room = rooms4[roomId];
       if (!room || room.gameOver) return;
 
@@ -103,7 +101,7 @@ export const setupFourPlayerGameSocket = (namespace) => {
       if (currentPlayer.playerId !== playerId && !currentPlayer.isBot) return;
 
       const dice = Math.floor(Math.random() * 6) + 1;
-      namespace.to(roomId).emit('dice-rolled', {
+      namespace.to(roomId).emit('dice-rolled-4p', {
         playerIndex: room.turnIndex,
         dice
       });
@@ -113,7 +111,7 @@ export const setupFourPlayerGameSocket = (namespace) => {
       }
     });
 
-    socket.on('move-token', async ({ roomId, playerId, tokenIndex, dice }) => {
+    socket.on('move-token-4p', async ({ roomId, playerId, tokenIndex, dice }) => {
       const room = rooms4[roomId];
       if (!room || room.gameOver) return;
 
@@ -141,7 +139,7 @@ export const setupFourPlayerGameSocket = (namespace) => {
             if (p.tokens[i] !== null && p.tokens[i] === token && token !== HOME_POSITION) {
               p.tokens[i] = null;
               currentPlayer.kills++;
-              namespace.to(roomId).emit('token-killed', {
+              namespace.to(roomId).emit('token-killed-4p', {
                 killerIndex: room.turnIndex,
                 victimIndex: idx,
                 position: token
@@ -154,7 +152,7 @@ export const setupFourPlayerGameSocket = (namespace) => {
       const active = currentPlayer.tokens.filter(t => t !== null && t !== HOME_POSITION);
       currentPlayer.totalPoints = currentPlayer.completed * 10 + currentPlayer.kills * 2 + active.length;
 
-      namespace.to(roomId).emit('token-moved', {
+      namespace.to(roomId).emit('token-moved-4p', {
         playerIndex: room.turnIndex,
         tokenIndex,
         newPosition: token,
@@ -171,7 +169,7 @@ export const setupFourPlayerGameSocket = (namespace) => {
             await user.save();
           }
         }
-        return namespace.to(roomId).emit('game-over', {
+        return namespace.to(roomId).emit('game-over-4p', {
           winner: currentPlayer.name,
           message: `🎉 ${currentPlayer.name} wins the game!`
         });
@@ -181,7 +179,7 @@ export const setupFourPlayerGameSocket = (namespace) => {
       const nextPlayer = room.players[room.turnIndex];
       if (nextPlayer.isBot) {
         const nextDice = Math.floor(Math.random() * 6) + 1;
-        namespace.to(roomId).emit('dice-rolled', { playerIndex: room.turnIndex, dice: nextDice });
+        namespace.to(roomId).emit('dice-rolled-4p', { playerIndex: room.turnIndex, dice: nextDice });
         setTimeout(() => handleBotMove4(namespace, roomId, room.turnIndex, nextDice), 1500);
       } else {
         namespace.to(roomId).emit('message', { message: `🎮 ${nextPlayer.name}'s turn!` });
@@ -194,7 +192,7 @@ function startFourPlayerGame(namespace, roomId) {
   const room = rooms4[roomId];
   if (!room) return;
 
-  namespace.to(roomId).emit('game-started', {
+  namespace.to(roomId).emit('game-started-4p', {
     players: room.players,
     winning_amount: 4 * room.bet - 4*room.bet / 10,
     message: `🎮 4-player game started! ${room.players[0].name}'s turn.`
@@ -236,7 +234,7 @@ function handleBotMove4(namespace, roomId, botIndex, dice) {
         if (p.tokens[i] !== null && p.tokens[i] === token && token !== HOME_POSITION) {
           p.tokens[i] = null;
           bot.kills++;
-          namespace.to(roomId).emit('token-killed', {
+          namespace.to(roomId).emit('token-killed-4p', {
             killerIndex: botIndex,
             victimIndex: idx,
             position: token
@@ -249,7 +247,7 @@ function handleBotMove4(namespace, roomId, botIndex, dice) {
   const active = bot.tokens.filter(t => t !== null && t !== HOME_POSITION);
   bot.totalPoints = bot.completed * 10 + bot.kills * 2 + active.length;
 
-  namespace.to(roomId).emit('token-moved', {
+  namespace.to(roomId).emit('token-moved-4p', {
     playerIndex: botIndex,
     tokenIndex: indexToMove,
     newPosition: token,
@@ -259,7 +257,7 @@ function handleBotMove4(namespace, roomId, botIndex, dice) {
 
   if (bot.completed === 4) {
     room.gameOver = true;
-    return namespace.to(roomId).emit('game-over', {
+    return namespace.to(roomId).emit('game-over-4p', {
       winner: bot.name,
       message: `🤖 ${bot.name} wins the game!`
     });
@@ -269,7 +267,7 @@ function handleBotMove4(namespace, roomId, botIndex, dice) {
   const nextPlayer = room.players[room.turnIndex];
   if (nextPlayer.isBot) {
     const nextDice = Math.floor(Math.random() * 6) + 1;
-    namespace.to(roomId).emit('dice-rolled', { playerIndex: room.turnIndex, dice: nextDice });
+    namespace.to(roomId).emit('dice-rolled-4p', { playerIndex: room.turnIndex, dice: nextDice });
     setTimeout(() => handleBotMove4(namespace, roomId, room.turnIndex, nextDice), 1500);
   } else {
     namespace.to(roomId).emit('message', { message: `🎮 ${nextPlayer.name}'s turn!` });
