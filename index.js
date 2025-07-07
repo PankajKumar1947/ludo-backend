@@ -9,7 +9,7 @@ import authRouter from './src/routes/auth.js';
 import playerRouter from './src/routes/player.js';
 
 import { Server } from 'socket.io';
-import { setupUnifiedGameSocket } from './src/socket/play-game-socket.js';
+import { setupUnifiedGameSocket } from './src/socket/two-four-game.js';
 
 const app = express();
 const server = http.createServer(app);
