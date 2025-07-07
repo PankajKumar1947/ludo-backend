@@ -30,7 +30,7 @@ dbConnect();
 app.get('/', (req, res) => res.send('Hello World!'));
 app.use('/api/v1/', authRouter);
 app.use('/api/v1/player', playerRouter);
-app.use("/api/v1", commonRouter );
+app.use("/api/v1/common/", commonRouter );
 
 app.get('/', (req, res) => res.send('Hello World!'));
 

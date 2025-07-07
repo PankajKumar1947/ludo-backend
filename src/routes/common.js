@@ -1,9 +1,8 @@
 import express from 'express'
-import multer from 'multer';
 import { uploadImageToCloud } from '../controllers/common.js';
 const router = express.Router()
-const upload = multer();
+import upload from '../middleware/uploadMiddleware.js';
 
-router.post('/upload-img', upload.none(), uploadImageToCloud);
+router.post('/upload-img', upload.single('image'), uploadImageToCloud);
 
 export default router
