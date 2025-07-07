@@ -148,7 +148,7 @@ export const setupUnifiedGameSocket = (namespace) => {
 
             room.started = true;
             startFourPlayerGame(namespace, roomId);
-          }, 30000);
+          }, 2000);
 
         } else {
           roomId = openRoom[0];
