@@ -7,6 +7,7 @@ import dbConnect from './src/database/dbConnect.js';
 import cors from 'cors';
 import authRouter from './src/routes/auth.js';
 import playerRouter from './src/routes/player.js';
+import commonRouter from "./src/routes/common.js";
 
 import { Server } from 'socket.io';
 import { setupUnifiedGameSocket } from './src/socket/two-four-game.js';
@@ -29,6 +30,8 @@ dbConnect();
 app.get('/', (req, res) => res.send('Hello World!'));
 app.use('/api/v1/', authRouter);
 app.use('/api/v1/player', playerRouter);
+app.use("/api/v1", commonRouter );
+
 app.get('/', (req, res) => res.send('Hello World!'));
 
 // for automated test
