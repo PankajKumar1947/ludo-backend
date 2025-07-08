@@ -1,4 +1,5 @@
 import User from '../model/user.js';
+import { setupCustomRoomGame } from './custom-room-game.js';
 
 const TOTAL_POSITIONS = 52;
 const HOME_POSITION = 57;
@@ -270,6 +271,9 @@ export const setupUnifiedGameSocket = (namespace) => {
       }
     });
   });
+  
+  // Add custom room game logic
+  setupCustomRoomGame(namespace);
 };
 
 function startFourPlayerGame(namespace, roomId) {
