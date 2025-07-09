@@ -3,8 +3,30 @@ import User from '../model/user.js';
 const customRooms = {};
 const MAX_SCORE_LIMIT = 100;
 
-function generateRoomId() {
-  return Math.random().toString(36).substr(2, 6).toUpperCase();
+function generateRoomId(length = 6) {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const numbers = '0123456789';
+  const chars = letters + numbers;
+
+  let roomId = '';
+  let hasLetter = false;
+  let hasNumber = false;
+
+  while (!hasLetter || !hasNumber || roomId.length < length) {
+    const char = chars[Math.floor(Math.random() * chars.length)];
+    roomId += char;
+    if (letters.includes(char)) hasLetter = true;
+    if (numbers.includes(char)) hasNumber = true;
+
+    // Reset if roomId exceeds length without meeting both conditions
+    if (roomId.length > length) {
+      roomId = '';
+      hasLetter = false;
+      hasNumber = false;
+    }
+  }
+
+  return roomId.substring(0, length);
 }
 
 function getNextPlayerIndex(players, currentIndex) {
@@ -17,11 +39,27 @@ export const setupCustomRoomGame = (namespace) => {
 
     socket.on('create-custom-room', async ({ playerId, bet_amount, playerLimit }) => {
       try {
-        const user = await User.findById(playerId);
-        if (!user || user.wallet < bet_amount) {
+
+        if (!playerId || !bet_amount || !playerId) {
           return socket.emit('message', {
             status: 'error',
-            message: '❌ Invalid user or insufficient balance'
+            message: "Missing data of playerid, bet_amount, playerid"
+          })
+        }
+
+        const user = await User.findById(playerId);
+
+        if (!user) {
+          return socket.emit("message", {
+            status: 'error',
+            message: "❌ Invalid User Id"
+          })
+        }
+
+        if (user.wallet < bet_amount) {
+          return socket.emit('message', {
+            status: 'error',
+            message: '❌ Insufficient balance'
           });
         }
 
@@ -71,7 +109,7 @@ export const setupCustomRoomGame = (namespace) => {
       }
     });
 
-    socket.on('join-custom-room', async ({ roomId, playerId, bet_amount }) => {
+    socket.on('join-custom-room', async ({ roomId, playerId }) => {
       try {
         const room = customRooms[roomId];
 
@@ -97,14 +135,19 @@ export const setupCustomRoomGame = (namespace) => {
         }
 
         const user = await User.findById(playerId);
-        if (!user || user.wallet < bet_amount) {
+
+        // ✅ Use the room's original bet value for validation
+        const roomBetAmount = room.bet;
+
+        if (!user || user.wallet < roomBetAmount) {
           return socket.emit('message', {
             status: 'error',
-            message: '❌ Invalid user or insufficient balance'
+            message: '❌ Insufficient balance'
           });
         }
 
-        user.wallet -= bet_amount;
+        // 💰 Deduct player bet amount (based on room settings, not client input)
+        user.wallet -= roomBetAmount;
         await user.save();
 
         const player = {
@@ -117,36 +160,33 @@ export const setupCustomRoomGame = (namespace) => {
 
         room.players.push(player);
         socket.join(roomId);
-        socket.emit('joined-custom-room', { roomId });
 
+        // 1️⃣ Send room info to joining player
+        socket.emit('joined-custom-room', {
+          roomId,
+          bet_amount: roomBetAmount,
+          playerLimit: room.playerLimit,
+          players: room.players
+        });
+
+        // 2️⃣ Notify all others in the room
         namespace.to(roomId).emit('player-joined', {
           players: room.players,
           message: `🎉 ${user.first_name} joined the room`
         });
 
-        if (room.players.length === room.playerLimit) {
-          room.started = true;
+        // 3️⃣ Notify host that the game is ready to start
+        if (room.players.length >= 2) {
           clearTimeout(room.autoStartTimer);
-          clearTimeout(room.destroyTimer);
-          startCustomRoomGame(namespace, roomId);
-        } else if (
-          room.playerLimit === 4 &&
-          room.players.length >= 3 &&
-          !room.started &&
-          !room.autoStartTimer
-        ) {
-          namespace.to(roomId).emit('ready-to-start', {
-            message: `✅ ${room.players.length} players joined. Host can start the game manually.`,
-          });
 
-          room.autoStartTimer = setTimeout(() => {
-            if (!room.started) {
-              room.started = true;
-              clearTimeout(room.destroyTimer);
-              startCustomRoomGame(namespace, roomId);
-            }
-          }, 10000); // 10 seconds
+          // Always notify host when room is ready to start (min 2 players)
+          namespace.to(room.players[0].id).emit('ready-to-start', {
+            message: `✅ ${room.players.length === room.playerLimit ? 'All players joined.' : 'Minimum players joined.'} You can start the game now.`,
+            roomId,
+            players: room.players
+          });
         }
+
       } catch (err) {
         console.error(err);
         socket.emit('message', {
@@ -269,7 +309,7 @@ function startCustomRoomGame(namespace, roomId) {
     const currentPlayer = room.players[currentPlayerIndex];
     const diceValue = Math.floor(Math.random() * 6) + 1;
 
-    namespace.to(roomId).emit('dice-rolled', {
+    namespace.to(roomId).emit('custom-dice-rolled', {
       playerId: currentPlayer.playerId,
       dice: diceValue,
       message: `🎲 ${currentPlayer.name} rolled a ${diceValue}`
@@ -284,8 +324,7 @@ function startCustomRoomGame(namespace, roomId) {
 
     setTimeout(() => {
       if (!room.gameOver) handleTurn();
-    }, 5000); // Next turn in 5 seconds
+    }, 60000); // Next turn in 5 seconds
   }
-
   handleTurn();
 }
