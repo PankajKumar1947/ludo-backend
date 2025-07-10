@@ -1,5 +1,7 @@
 import user from "../model/user.js";
 import history from "../model/history.js";
+import cloudinary from '../config/cloudinaryConfig.js';
+import streamifier from 'streamifier';
 
 export const playerDetails = async (req, res) => {
   try {
@@ -147,5 +149,62 @@ export const playerHistory = async (req, res) => {
   } catch (error) {
     console.error("Error in playerHistory:", error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const UpdateProfileImage = async (req, res) => {
+  try {
+    const file = req.file;
+    const playerId = req.body.playerId;
+
+    if (!file || !playerId) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: image or player ID"
+      });
+    }
+
+    const player = await user.findById(playerId);
+
+    if (!player) {
+      return res.status(404).json({
+        success: false,
+        message: "Player not found"
+      });
+    }
+
+    // Upload buffer to Cloudinary
+    const streamUpload = (fileBuffer) => {
+      return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: 'Ludo', public_id: `profile_${playerId}` },
+          (error, result) => {
+            if (result) resolve(result);
+            else reject(error);
+          }
+        );
+        streamifier.createReadStream(fileBuffer).pipe(stream);
+      });
+    };
+
+    const result = await streamUpload(file.buffer);
+
+    // Update player's profile image URL
+    player.pic_url = result.secure_url;
+    await player.save();
+
+    return res.status(200).json({
+      success: true,
+      imageUrl: result.secure_url,
+      public_id: result.public_id,
+      message: "Image uploaded successfully"
+    });
+
+  } catch (error) {
+    console.error("Error in uploading image:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to upload image"
+    });
   }
 };
