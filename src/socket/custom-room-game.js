@@ -62,6 +62,7 @@ export const setupCustomRoomGame = (namespace) => {
         socket.emit('custom-room-created', { roomId, bet_amount });
         namespace.to(roomId).emit('player-joined', {
           players: customRooms[roomId].players,
+          playerLimit: customRooms[roomId].playerLimit,
           message: `🎉 ${user.first_name} joined the room`
         });
       } catch (err) {
@@ -98,6 +99,7 @@ export const setupCustomRoomGame = (namespace) => {
 
         namespace.to(roomId).emit('player-joined', {
           players: room.players,
+          playerLimit: room.playerLimit,
           message: `🎉 ${user.first_name} joined the room`
         });
 
