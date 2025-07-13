@@ -220,31 +220,50 @@ export const setupCustomRoomGame = (namespace) => {
       const room = customRooms[roomId];
       const player = room.players.find(p => p.id === socket.id);
 
-      if (player) delete playerRoomMap[player.playerId];
+      if (!room || !player) return;
 
-      if (!room || room.gameOver) return;
-      room.gameOver = true;
+      // Remove player from room
+      room.players = room.players.filter(p => p.id !== socket.id);
+      delete playerRoomMap[player.playerId];
 
-      clearTimeout(room.timeout);
-      clearTimeout(room.autoStartTimer);
-      clearTimeout(room.destroyTimer);
-
-      const winner = room.players.reduce((a, b) => a.score >= b.score ? a : b);
-      if (!winner.isBot) {
-        const user = await User.findById(winner.playerId);
-        if (user) {
-          user.wallet += room.bet * room.players.length;
-          await user.save();
-        }
-      }
-
-      namespace.to(roomId).emit('game-over-custom', {
-        winner: winner.name,
-        message: `❌ A player disconnected. ${winner.name} wins by score.`
+      // Notify others in the room
+      namespace.to(roomId).emit('player-left', {
+        playerId: player.playerId,
+        players: room.players,
+        message: `❌ ${player.name} disconnected.`
       });
 
-      delete customRooms[roomId];
+      // If no one is left in the room, destroy it
+      if (room.players.length === 0) {
+        clearTimeout(room.timeout);
+        clearTimeout(room.autoStartTimer);
+        clearTimeout(room.destroyTimer);
+        delete customRooms[roomId];
+        return;
+      }
+
+      // If game already started, end it and award winner
+      if (room.started && !room.gameOver) {
+        room.gameOver = true;
+
+        const winner = room.players.reduce((a, b) => a.score >= b.score ? a : b);
+        if (!winner.isBot) {
+          const user = await User.findById(winner.playerId);
+          if (user) {
+            user.wallet += room.bet * (room.players.length + 1); // include disconnected player's bet
+            await user.save();
+          }
+        }
+
+        namespace.to(roomId).emit('game-over-custom', {
+          winner: winner.name,
+          message: `❌ A player disconnected. ${winner.name} wins by score.`
+        });
+
+        delete customRooms[roomId];
+      }
     });
+
   });
 };
 
