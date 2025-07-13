@@ -1,7 +1,7 @@
 import User from '../model/user.js';
 
 const customRooms = {};
-const playerRoomMap = {}; // Track player -> room
+const playerRoomMap = {};
 const MAX_SCORE_LIMIT = 100;
 
 function generateRoomId(length = 6) {
@@ -64,7 +64,9 @@ export const setupCustomRoomGame = (namespace) => {
         };
 
         playerRoomMap[playerId] = roomId;
+        socket.playerId = playerId; // ✅ store for disconnect tracking
         socket.join(roomId);
+
         socket.emit('custom-room-created', { roomId, bet_amount });
         namespace.to(roomId).emit('player-joined', {
           players: customRooms[roomId].players,
@@ -99,6 +101,7 @@ export const setupCustomRoomGame = (namespace) => {
         const player = { id: socket.id, playerId, name: user.first_name, isBot: false, score: 0, pic_url: user.pic_url || '' };
         room.players.push(player);
         playerRoomMap[playerId] = roomId;
+        socket.playerId = playerId;
         socket.join(roomId);
 
         socket.emit('joined-custom-room', {
@@ -214,29 +217,25 @@ export const setupCustomRoomGame = (namespace) => {
     });
 
     socket.on('disconnect', async () => {
-      const roomId = Object.keys(customRooms).find(r => customRooms[r].players.some(p => p.id === socket.id));
-      if (!roomId) return;
+      const playerId = socket.playerId;
+      const roomId = playerRoomMap[playerId];
+      if (!roomId || !customRooms[roomId]) return;
 
       const room = customRooms[roomId];
-      if (!room) return;
-
-      const playerIndex = room.players.findIndex(p => p.id === socket.id);
+      const playerIndex = room.players.findIndex(p => p.playerId === playerId);
       if (playerIndex === -1) return;
 
       const player = room.players[playerIndex];
 
-      // ✅ Ensure cleanup
-      delete playerRoomMap[player.playerId];
+      delete playerRoomMap[playerId];
       room.players.splice(playerIndex, 1);
 
-      // 🚪 Notify others
       namespace.to(roomId).emit('player-left', {
-        playerId: player.playerId,
+        playerId,
         players: room.players,
         message: `❌ ${player.name} disconnected.`
       });
 
-      // 🧹 If room is empty, destroy
       if (room.players.length === 0) {
         clearTimeout(room.timeout);
         clearTimeout(room.autoStartTimer);
@@ -245,7 +244,6 @@ export const setupCustomRoomGame = (namespace) => {
         return;
       }
 
-      // 🏁 If game was started, end it
       if (room.started && !room.gameOver) {
         room.gameOver = true;
 
@@ -253,7 +251,7 @@ export const setupCustomRoomGame = (namespace) => {
         if (!winner.isBot) {
           const user = await User.findById(winner.playerId);
           if (user) {
-            user.wallet += room.bet * (room.players.length + 1);
+            user.wallet += room.bet * (room.players.length + 1); // including disconnected player
             await user.save();
           }
         }
@@ -266,7 +264,6 @@ export const setupCustomRoomGame = (namespace) => {
         delete customRooms[roomId];
       }
     });
-
   });
 };
 
