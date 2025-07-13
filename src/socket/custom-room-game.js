@@ -218,22 +218,25 @@ export const setupCustomRoomGame = (namespace) => {
       if (!roomId) return;
 
       const room = customRooms[roomId];
-      const player = room.players.find(p => p.id === socket.id);
+      if (!room) return;
 
-      if (!room || !player) return;
+      const playerIndex = room.players.findIndex(p => p.id === socket.id);
+      if (playerIndex === -1) return;
 
-      // Remove player from room
-      room.players = room.players.filter(p => p.id !== socket.id);
+      const player = room.players[playerIndex];
+
+      // ✅ Ensure cleanup
       delete playerRoomMap[player.playerId];
+      room.players.splice(playerIndex, 1);
 
-      // Notify others in the room
+      // 🚪 Notify others
       namespace.to(roomId).emit('player-left', {
         playerId: player.playerId,
         players: room.players,
         message: `❌ ${player.name} disconnected.`
       });
 
-      // If no one is left in the room, destroy it
+      // 🧹 If room is empty, destroy
       if (room.players.length === 0) {
         clearTimeout(room.timeout);
         clearTimeout(room.autoStartTimer);
@@ -242,7 +245,7 @@ export const setupCustomRoomGame = (namespace) => {
         return;
       }
 
-      // If game already started, end it and award winner
+      // 🏁 If game was started, end it
       if (room.started && !room.gameOver) {
         room.gameOver = true;
 
@@ -250,7 +253,7 @@ export const setupCustomRoomGame = (namespace) => {
         if (!winner.isBot) {
           const user = await User.findById(winner.playerId);
           if (user) {
-            user.wallet += room.bet * (room.players.length + 1); // include disconnected player's bet
+            user.wallet += room.bet * (room.players.length + 1);
             await user.save();
           }
         }
