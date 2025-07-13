@@ -30,9 +30,9 @@ export const setupCustomRoomGame = (namespace) => {
     socket.on('create-custom-room', async ({ playerId, bet_amount, playerLimit }) => {
       socket.playerId = playerId;
 
-      if (playerRoomMap[playerId]) {
-        return socket.emit('message', { status: 'error', message: '🚫 Already in a room' });
-      }
+      // if (playerRoomMap[playerId]) {
+      //   return socket.emit('message', { status: 'error', message: '🚫 Already in a room' });
+      // }
 
       if (!playerId || !bet_amount || !playerLimit) {
         return socket.emit('message', { status: 'error', message: 'Missing data' });
@@ -77,9 +77,9 @@ export const setupCustomRoomGame = (namespace) => {
     socket.on('join-custom-room', async ({ roomId, playerId }) => {
       socket.playerId = playerId;
 
-      if (playerRoomMap[playerId]) {
-        return socket.emit('message', { status: 'error', message: '🚫 Already in a room' });
-      }
+      // if (playerRoomMap[playerId]) {
+      //   return socket.emit('message', { status: 'error', message: '🚫 Already in a room' });
+      // }
 
       const room = customRooms[roomId];
       if (!room || room.started || room.players.length >= room.playerLimit) {
