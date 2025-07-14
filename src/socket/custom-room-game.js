@@ -159,7 +159,7 @@ export const setupCustomRoomGame = (namespace) => {
         bet_amount: room.bet
       });
 
-      setTimeout(() => startCustomRoomGame(namespace, roomId), 30000);
+      setTimeout(() => startCustomRoomGame(namespace, roomId), 5000);
     });
 
     socket.on('custom-roll-dice', ({ roomId, playerId }) => {
@@ -192,14 +192,14 @@ export const setupCustomRoomGame = (namespace) => {
           const nextPlayer = room.players[room.currentPlayerIndex];
 
           namespace.to(roomId).emit('turn-skipped', {
-            skippedPlayerId: prevPlayer.playerId,
-            nextPlayerId: nextPlayer.playerId,
-            message: `⏱ ${prevPlayer.name} took too long. Turn passed to ${nextPlayer.name}`
+            skippedPlayerId: prevPlayer?.playerId,
+            nextPlayerId: nextPlayer?.playerId,
+            message: `⏱ ${prevPlayer?.name} took too long. Turn passed to ${nextPlayer?.name}`
           });
 
           namespace.to(roomId).emit('current-turn', {
-            playerId: nextPlayer.playerId,
-            name: nextPlayer.name,
+            playerId: nextPlayer?.playerId,
+            name: nextPlayer?.name,
             playerIndex: room.currentPlayerIndex
           });
         }
@@ -228,13 +228,13 @@ export const setupCustomRoomGame = (namespace) => {
       const nextPlayer = room.players[room.currentPlayerIndex];
 
       namespace.to(roomId).emit('turn-changed', {
-        currentPlayerId: nextPlayer.playerId,
-        message: `🎯 ${nextPlayer.name}'s turn`
+        currentPlayerId: nextPlayer?.playerId,
+        message: `🎯 ${nextPlayer?.name}'s turn`
       });
 
       namespace.to(roomId).emit('current-turn', {
-        playerId: nextPlayer.playerId,
-        name: nextPlayer.name,
+        playerId: nextPlayer?.playerId,
+        name: nextPlayer?.name,
         playerIndex: room.currentPlayerIndex
       });
 
