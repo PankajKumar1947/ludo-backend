@@ -30,10 +30,6 @@ export const setupCustomRoomGame = (namespace) => {
     socket.on('create-custom-room', async ({ playerId, bet_amount, playerLimit }) => {
       socket.playerId = playerId;
 
-      // if (playerRoomMap[playerId]) {
-      //   return socket.emit('message', { status: 'error', message: '🚫 Already in a room' });
-      // }
-
       if (!playerId || !bet_amount || !playerLimit) {
         return socket.emit('message', { status: 'error', message: 'Missing data' });
       }
@@ -56,6 +52,9 @@ export const setupCustomRoomGame = (namespace) => {
         gameOver: false,
         timeout: null,
         autoStartTimer: null,
+        actionTimeout: null,
+        hasRolled: false,
+        hasMoved: false,
         destroyTimer: setTimeout(() => {
           if (!customRooms[roomId].started) {
             delete customRooms[roomId];
@@ -76,10 +75,6 @@ export const setupCustomRoomGame = (namespace) => {
 
     socket.on('join-custom-room', async ({ roomId, playerId }) => {
       socket.playerId = playerId;
-
-      // if (playerRoomMap[playerId]) {
-      //   return socket.emit('message', { status: 'error', message: '🚫 Already in a room' });
-      // }
 
       const room = customRooms[roomId];
       if (!room || room.started || room.players.length >= room.playerLimit) {
@@ -128,7 +123,6 @@ export const setupCustomRoomGame = (namespace) => {
 
       const room = customRooms[roomId];
       room.players = room.players.filter(p => p.playerId !== playerId);
-
       delete playerRoomMap[playerId];
       socket.leave(roomId);
 
@@ -142,6 +136,7 @@ export const setupCustomRoomGame = (namespace) => {
         clearTimeout(room.timeout);
         clearTimeout(room.autoStartTimer);
         clearTimeout(room.destroyTimer);
+        clearTimeout(room.actionTimeout);
         delete customRooms[roomId];
       }
     });
@@ -171,7 +166,9 @@ export const setupCustomRoomGame = (namespace) => {
       const room = customRooms[roomId];
       if (!room || room.gameOver) return;
       const currentPlayer = room.players[room.currentPlayerIndex];
-      if (currentPlayer.playerId !== playerId) return;
+      if (currentPlayer?.playerId !== playerId) return;
+
+      room.hasRolled = true;
 
       const diceValue = Math.floor(Math.random() * 6) + 1;
 
@@ -181,23 +178,41 @@ export const setupCustomRoomGame = (namespace) => {
         message: `🎲 ${currentPlayer.name} rolled a ${diceValue}`
       });
 
-      namespace.to(roomId).emit('turn-changed', {
-        currentPlayerId: playerId,
-        message: `🎯 ${currentPlayer.name}'s turn`
-      });
-
       namespace.to(roomId).emit('current-turn', {
         playerId: currentPlayer.playerId,
         name: currentPlayer.name,
         playerIndex: room.currentPlayerIndex
       });
 
-      room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
+      if (room.actionTimeout) clearTimeout(room.actionTimeout);
+      room.actionTimeout = setTimeout(() => {
+        if (!room.hasMoved) {
+          const prevPlayer = room.players[room.currentPlayerIndex];
+          room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
+          const nextPlayer = room.players[room.currentPlayerIndex];
+
+          namespace.to(roomId).emit('turn-skipped', {
+            skippedPlayerId: prevPlayer.playerId,
+            nextPlayerId: nextPlayer.playerId,
+            message: `⏱ ${prevPlayer.name} took too long. Turn passed to ${nextPlayer.name}`
+          });
+
+          namespace.to(roomId).emit('current-turn', {
+            playerId: nextPlayer.playerId,
+            name: nextPlayer.name,
+            playerIndex: room.currentPlayerIndex
+          });
+        }
+        room.hasRolled = false;
+        room.hasMoved = false;
+      }, 60 * 1000);
     });
 
     socket.on('custom-token-moved', ({ roomId, playerId, tokenIndex, from, to }) => {
       const room = customRooms[roomId];
       if (!room || room.gameOver) return;
+
+      room.hasMoved = true;
 
       namespace.to(roomId).emit('custom-token-moved', {
         playerId,
@@ -206,6 +221,25 @@ export const setupCustomRoomGame = (namespace) => {
         to,
         message: `🔀 Player ${playerId} moved token ${tokenIndex} from ${from} to ${to}`
       });
+
+      if (room.actionTimeout) clearTimeout(room.actionTimeout);
+
+      room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
+      const nextPlayer = room.players[room.currentPlayerIndex];
+
+      namespace.to(roomId).emit('turn-changed', {
+        currentPlayerId: nextPlayer.playerId,
+        message: `🎯 ${nextPlayer.name}'s turn`
+      });
+
+      namespace.to(roomId).emit('current-turn', {
+        playerId: nextPlayer.playerId,
+        name: nextPlayer.name,
+        playerIndex: room.currentPlayerIndex
+      });
+
+      room.hasRolled = false;
+      room.hasMoved = false;
     });
 
     socket.on('disconnect', async () => {
@@ -229,6 +263,7 @@ export const setupCustomRoomGame = (namespace) => {
         clearTimeout(room.timeout);
         clearTimeout(room.autoStartTimer);
         clearTimeout(room.destroyTimer);
+        clearTimeout(room.actionTimeout);
         delete customRooms[roomId];
         return;
       }
@@ -262,6 +297,9 @@ function startCustomRoomGame(namespace, roomId) {
 
   const winning_amount = room.bet * room.players.length * 0.9;
   room.currentPlayerIndex = 0;
+  room.hasRolled = false;
+  room.hasMoved = false;
+  room.actionTimeout = null;
 
   namespace.to(roomId).emit('custom-game-started', {
     players: room.players,
