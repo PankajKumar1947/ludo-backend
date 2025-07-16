@@ -57,7 +57,7 @@ async function announceTurn(namespace, roomId) {
     });
 
     announceTurn(namespace, roomId);
-  }, 30000);
+  }, 20000);
 }
 
 export const setupCustomRoomGame = (namespace) => {
@@ -343,7 +343,7 @@ async function startCustomRoomGame(namespace, roomId) {
   // Start 8-minute timer
   const duration = 8 * 60 * 1000;
   namespace.to(roomId).emit('game-timer-started', {
-    duration,
+    duration: 480,
     message: '⏳ Game will automatically end in 8 minutes.'
   });
 
