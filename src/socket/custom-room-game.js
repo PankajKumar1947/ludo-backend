@@ -163,9 +163,7 @@ export const setupCustomRoomGame = (namespace) => {
         message: `🚪 Player ${playerId} left the room`
       });
 
-      if (room.players.length === 0) {
-        await CustomRoom.deleteOne({ roomId: room.roomId });
-      }
+      // Room is no longer deleted when empty
     });
 
     socket.on('disconnect', async () => {
@@ -184,14 +182,13 @@ export const setupCustomRoomGame = (namespace) => {
         message: `❌ A player disconnected.`
       });
 
-      if (room.players.length === 0) {
-        await CustomRoom.deleteOne({ roomId: room.roomId });
-      } else if (room.started && !room.gameOver) {
+      // Room is not deleted if empty
+      if (room.started && !room.gameOver) {
         room.gameOver = true;
         await room.save();
 
-        const winner = room.players.reduce((a, b) => a.score >= b.score ? a : b);
-        if (!winner.isBot) {
+        const winner = room.players.reduce((a, b) => a.score >= b.score ? a : b, {});
+        if (!winner.isBot && winner.playerId) {
           const user = await User.findById(winner.playerId);
           if (user) {
             const winning_amount = room.bet * room.players.length * 0.9;
@@ -205,7 +202,7 @@ export const setupCustomRoomGame = (namespace) => {
           message: `❌ A player disconnected. ${winner.name} wins by score.`
         });
 
-        await CustomRoom.deleteOne({ roomId: room.roomId });
+        // Not deleting the room anymore
       }
     });
   });
