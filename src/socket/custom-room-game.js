@@ -93,6 +93,7 @@ export const setupCustomRoomGame = (namespace) => {
         hasRolled: false,
         hasMoved: false,
         consecutiveSixes: {},
+        lastDiceValue: null,
         destroyTimer: setTimeout(() => {
           if (!customRooms[roomId]?.started) {
             delete customRooms[roomId];
@@ -218,6 +219,8 @@ export const setupCustomRoomGame = (namespace) => {
         room.consecutiveSixes[playerId] = 0;
       }
 
+      room.lastDiceValue = diceValue;
+
       namespace.to(roomId).emit('custom-dice-rolled', {
         playerId,
         dice: diceValue,
@@ -245,8 +248,37 @@ export const setupCustomRoomGame = (namespace) => {
         message: `🔀 Player ${playerId} moved token ${tokenIndex} from ${from} to ${to}`
       });
 
-      room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
-      announceTurn(namespace, roomId);
+      const lastDiceValue = room.lastDiceValue || 0;
+
+      if (lastDiceValue !== 6) {
+        room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
+        announceTurn(namespace, roomId);
+      } else {
+        // same player gets another turn
+        room.hasRolled = false;
+        room.hasMoved = false;
+
+        namespace.to(roomId).emit('current-turn', {
+          playerId,
+          name: room.players[room.currentPlayerIndex]?.name,
+          playerIndex: room.currentPlayerIndex
+        });
+
+        if (room.actionTimeout) clearTimeout(room.actionTimeout);
+        room.actionTimeout = setTimeout(() => {
+          const skippedPlayer = room.players[room.currentPlayerIndex];
+          room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
+          const nextPlayer = room.players[room.currentPlayerIndex];
+
+          namespace.to(roomId).emit('turn-skipped', {
+            skippedPlayerId: skippedPlayer?.playerId,
+            nextPlayerId: nextPlayer?.playerId,
+            message: `⏱ ${skippedPlayer?.name} did not complete their turn in 60 seconds.`
+          });
+
+          announceTurn(namespace, roomId);
+        }, 60 * 1000);
+      }
     });
 
     socket.on('leave-custom-room', async ({ playerId }) => {
@@ -303,7 +335,8 @@ export const setupCustomRoomGame = (namespace) => {
         if (!winner.isBot) {
           const user = await User.findById(winner.playerId);
           if (user) {
-            user.wallet += room.bet * (room.players.length + 1);
+            const winning_amount = room.bet * room.players.length * 0.9;
+            user.wallet += winning_amount;
             await user.save();
           }
         }
