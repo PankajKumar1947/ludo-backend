@@ -43,11 +43,23 @@ export const setupCustomRoomGame = (namespace) => {
           pic_url: user.pic_url || '',
         }],
         bet: bet_amount,
-      });
+        started: false,
+        gameOver: false,
+        timeout: null,
+        autoStartTimer: null,
+        actionTimeout: null,
+        hasRolled: false,
+        hasMoved: false,
+        consecutiveSixes: {},
+        destroyTimer: setTimeout(() => {
+          if (!customRooms[roomId]?.started) {
+            delete customRooms[roomId];
+            namespace.to(roomId).emit('message', { status: 'error', message: '🕒 Room destroyed due to inactivity.' });
+          }
+        }, 10 * 60 * 1000)
+      };
 
-      await newRoom.save();
-
-      socket.playerId = playerId;
+      playerRoomMap[playerId] = roomId;
       socket.join(roomId);
       socket.emit('custom-room-created', { roomId, bet_amount });
 
@@ -137,14 +149,61 @@ export const setupCustomRoomGame = (namespace) => {
         bet_amount: room.bet
       });
 
-      setTimeout(() => {
-        const winning_amount = room.bet * room.players.length * 0.9;
-        namespace.to(roomId).emit('custom-game-started', {
-          players: room.players,
-          winning_amount,
-          message: `🎮 Game started! ${room.players[0]?.name}'s turn.`
-        });
-      }, 1000);
+      setTimeout(() => startCustomRoomGame(namespace, roomId), 1000);
+    });
+
+    socket.on('custom-roll-dice', ({ roomId, playerId }) => {
+      const room = customRooms[roomId];
+      if (!room || room.gameOver) return;
+
+      const currentPlayer = room.players[room.currentPlayerIndex];
+      if (currentPlayer?.playerId !== playerId || room.hasRolled) return;
+
+      room.hasRolled = true;
+      if (!room.consecutiveSixes[playerId]) room.consecutiveSixes[playerId] = 0;
+
+      let diceValue = Math.floor(Math.random() * 6) + 1;
+      if (room.consecutiveSixes[playerId] >= 2 && diceValue === 6) {
+        while (diceValue === 6) {
+          diceValue = Math.floor(Math.random() * 6) + 1;
+        }
+      }
+
+      if (diceValue === 6) {
+        room.consecutiveSixes[playerId]++;
+      } else {
+        room.consecutiveSixes[playerId] = 0;
+      }
+
+      namespace.to(roomId).emit('custom-dice-rolled', {
+        playerId,
+        dice: diceValue,
+        message: `🎲 ${currentPlayer?.name} rolled a ${diceValue}`
+      });
+
+      namespace.to(roomId).emit('current-turn', {
+        playerId: currentPlayer?.playerId,
+        name: currentPlayer?.name,
+        playerIndex: room.currentPlayerIndex
+      });
+    });
+
+    socket.on('custom-token-moved', ({ roomId, playerId, tokenIndex, from, to }) => {
+      const room = customRooms[roomId];
+      if (!room || room.gameOver || !room.hasRolled || room.hasMoved) return;
+
+      room.hasMoved = true;
+
+      namespace.to(roomId).emit('custom-token-moved', {
+        playerId,
+        tokenIndex,
+        from,
+        to,
+        message: `🔀 Player ${playerId} moved token ${tokenIndex} from ${from} to ${to}`
+      });
+
+      room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
+      announceTurn(namespace, roomId);
     });
 
     socket.on('leave-custom-room', async ({ playerId }) => {
