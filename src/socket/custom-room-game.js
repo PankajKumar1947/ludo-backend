@@ -57,7 +57,7 @@ async function announceTurn(namespace, roomId) {
     });
 
     announceTurn(namespace, roomId);
-  }, 60000);
+  }, 30000);
 }
 
 export const setupCustomRoomGame = (namespace) => {
@@ -339,6 +339,39 @@ async function startCustomRoomGame(namespace, roomId) {
     winning_amount,
     message: `🎮 Game started! ${room.players[0]?.name}'s turn.`
   });
+
+  // Start 8-minute timer
+  const duration = 8 * 60 * 1000;
+  namespace.to(roomId).emit('game-timer-started', {
+    duration,
+    message: '⏳ Game will automatically end in 8 minutes.'
+  });
+
+  setTimeout(async () => {
+    const finalRoom = await CustomRoom.findOne({ roomId });
+    if (!finalRoom || finalRoom.gameOver) return;
+
+    finalRoom.gameOver = true;
+
+    const winner = finalRoom.players.reduce((a, b) => a.score >= b.score ? a : b);
+
+    if (!winner.isBot) {
+      const user = await User.findById(winner.playerId);
+      if (user) {
+        user.wallet += winning_amount;
+        await user.save();
+      }
+    }
+
+    await finalRoom.save();
+
+    namespace.to(roomId).emit('game-over-custom', {
+      winner: winner.name,
+      message: `⏰ Time's up! ${winner.name} wins with the highest score.`
+    });
+
+    await CustomRoom.deleteOne({ roomId });
+  }, duration);
 
   announceTurn(namespace, roomId);
 }
