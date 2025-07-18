@@ -3,14 +3,15 @@ import KYCVerification from '../model/kycDetails.js';
 // 1. Submit or Update KYC
 export const submitKYC = async (req, res) => {
   try {
-    const { aadhaarPhotoUrl, panCardPhotoUrl } = req.body;
+    const { aadhaarFrontPhotoUrl, aadhaarBackPhotoUrl, panCardPhotoUrl } = req.body;
     const userId = req.user.id; // Make sure `req.user` is populated via auth middleware
 
     let existingKYC = await KYCVerification.findOne({ userId });
 
     if (existingKYC) {
       // Update existing KYC
-      existingKYC.aadhaarPhotoUrl = aadhaarPhotoUrl;
+      existingKYC.aadhaarFrontPhotoUrl = aadhaarFrontPhotoUrl;
+      existingKYC.aadhaarBackPhotoUrl = aadhaarBackPhotoUrl;
       existingKYC.panCardPhotoUrl = panCardPhotoUrl;
       existingKYC.status = 'pending';
       existingKYC.rejectionReason = '';
@@ -21,8 +22,10 @@ export const submitKYC = async (req, res) => {
       // Create new KYC
       await KYCVerification.create({
         userId,
-        aadhaarPhotoUrl,
+        aadhaarFrontPhotoUrl, 
+        aadhaarBackPhotoUrl,
         panCardPhotoUrl,
+
       });
     }
 

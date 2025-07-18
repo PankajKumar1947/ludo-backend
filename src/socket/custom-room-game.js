@@ -57,7 +57,7 @@ async function announceTurn(namespace, roomId) {
     });
 
     announceTurn(namespace, roomId);
-  }, 20000);
+  }, 20000); // 20 seconds
 }
 
 export const setupCustomRoomGame = (namespace) => {
@@ -252,14 +252,38 @@ export const setupCustomRoomGame = (namespace) => {
         room.hasRolled = false;
         room.hasMoved = false;
         await room.save();
+        announceTurn(namespace, roomId);
+      }
+    });
 
-        namespace.to(roomId).emit('current-turn', {
-          playerId,
-          name: room.players[room.currentPlayerIndex]?.name,
-          playerIndex: room.currentPlayerIndex
-        });
+    // ✅ Token Killed Logic
+    socket.on('custom-token-killed', async ({ roomId, playerId, tokenIndex, from, to, killedPlayerId, killedTokenIndex }) => {
+      const room = await CustomRoom.findOne({ roomId });
+      if (!room || room.gameOver || !room.hasRolled || room.hasMoved) return;
 
-        if (actionTimeoutMap[roomId]) clearTimeout(actionTimeoutMap[roomId]);
+      room.hasMoved = true;
+      await room.save();
+
+      namespace.to(roomId).emit('custom-token-killed', {
+        killerId: playerId,
+        victimId: killedPlayerId,
+        killerTokenIndex: tokenIndex,
+        victimTokenIndex: killedTokenIndex,
+        from,
+        to,
+        message: `💥 Player ${playerId} killed token ${killedTokenIndex} of Player ${killedPlayerId}`
+      });
+
+      const lastDiceValue = room.lastDiceValue || 0;
+
+      if (lastDiceValue !== 6) {
+        room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
+        await room.save();
+        announceTurn(namespace, roomId);
+      } else {
+        room.hasRolled = false;
+        room.hasMoved = false;
+        await room.save();
         announceTurn(namespace, roomId);
       }
     });
@@ -315,6 +339,7 @@ export const setupCustomRoomGame = (namespace) => {
         await room.save();
         namespace.to(roomId).emit('game-over-custom', {
           winner: winner.name,
+          playerId: winner.playerId,
           message: `❌ A player disconnected. ${winner.name} wins by score.`
         });
 
@@ -340,7 +365,6 @@ async function startCustomRoomGame(namespace, roomId) {
     message: `🎮 Game started! ${room.players[0]?.name}'s turn.`
   });
 
-  // Start 8-minute timer
   const duration = 8 * 60 * 1000;
   namespace.to(roomId).emit('game-timer-started', {
     duration: 480,

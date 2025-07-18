@@ -7,7 +7,11 @@ const kycVerificationSchema = new mongoose.Schema({
     required: true,
     unique: true, // One KYC per user
   },
-  aadhaarPhotoUrl: {
+  aadhaarFrontPhotoUrl: {
+    type: String,
+    required: true,
+  },
+  aadhaarBackPhotoUrl: {
     type: String,
     required: true,
   },
