@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>KYC Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <h2 class="mb-4">KYC Verifications</h2>
+
+    <% if (kycs.length === 0) { %>
+      <div class="alert alert-info">No KYC submissions found.</div>
+    <% } else { %>
+      <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+          <thead class="table-dark">
+            <tr>
+              <th>User</th>
+              <th>Aadhaar</th>
+              <th>PAN</th>
+              <th>Status</th>
+              <th>Submitted</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% kycs.forEach(kyc => { %>
+              <tr>
+                <td>
+                  <strong><%= kyc.userId?.name %></strong><br />
+                  <small><%= kyc.userId?.email %></small>
+                </td>
+                <td><img src="<%= kyc.aadhaarPhotoUrl %>" alt="Aadhaar" width="100" /></td>
+                <td><img src="<%= kyc.panCardPhotoUrl %>" alt="PAN" width="100" /></td>
+                <td>
+                  <span class="badge bg-<%= 
+                    kyc.status === 'approved' ? 'success' : 
+                    kyc.status === 'rejected' ? 'danger' : 'warning' %>">
+                    <%= kyc.status %>
+                  </span>
+                  <% if (kyc.status === 'rejected') { %>
+                    <br /><small><%= kyc.rejectionReason %></small>
+                  <% } %>
+                </td>
+                <td><%= new Date(kyc.submittedAt).toLocaleString() %></td>
+                <td>
+                  <% if (kyc.status === 'pending') { %>
+                    <form action="/api/v1/kyc/approve/<%= kyc._id %>" method="POST" style="display:inline;">
+                      <button class="btn btn-success btn-sm">Approve</button>
+                    </form>
+
+                    <!-- Reject button and form -->
+                    <button class="btn btn-danger btn-sm" onclick="showRejectForm('<%= kyc._id %>')">Reject</button>
+
+                    <form id="reject-form-<%= kyc._id %>" class="d-none mt-2" action="/api/v1/kyc/reject/<%= kyc._id %>" method="POST">
+                      <input name="reason" required placeholder="Reason" class="form-control form-control-sm my-1" />
+                      <button class="btn btn-danger btn-sm" type="submit">Confirm Reject</button>
+                    </form>
+                  <% } else { %>
+                    <small>N/A</small>
+                  <% } %>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+
+  <script>
+    function showRejectForm(id) {
+      document.getElementById(`reject-form-${id}`).classList.toggle('d-none');
+    }
+  </script>
+</body>
+</html>

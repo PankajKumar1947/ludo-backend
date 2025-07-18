@@ -53,6 +53,7 @@ export const SigningIn = async (req, res) => {
       id: user._id,
       first_name: user.first_name,
       email: user.email,
+      role: "user",
     };
 
     const token = jwt.sign(tokenPayload, JWT_SECRET, {
