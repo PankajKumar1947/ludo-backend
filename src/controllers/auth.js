@@ -1,5 +1,6 @@
 import User from "../model/user.js";
 import jwt from "jsonwebtoken";
+import shortid from 'shortid';
 
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 
@@ -36,6 +37,7 @@ export const SigningIn = async (req, res) => {
     let isNewUser = false;
 
     if (!user) {
+      const referral_code = shortid.generate().toUpperCase();
       user = await User.create({
         first_name,
         user_id,
@@ -43,7 +45,8 @@ export const SigningIn = async (req, res) => {
         device_token,
         email,
         my_token,
-        pic_url
+        pic_url,
+        referral_code
       });
       isNewUser = true;
     }

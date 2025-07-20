@@ -43,6 +43,26 @@ const userSchema = new mongoose.Schema({
     {
       type: mongoose.Schema.Types.Mixed
     }
+  ],
+  
+  // Referral system
+  referral_code: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  referred_by: {
+    type: String,
+    default: null
+  },
+  referrals: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User"
+  }],
+  rewards: [
+    {
+      type: mongoose.Schema.Types.Mixed
+    }
   ]
 });
 

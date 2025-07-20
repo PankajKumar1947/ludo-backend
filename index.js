@@ -14,6 +14,7 @@ import kycRoutes from "./src/routes/kycRoutes.js"
 
 import { Server } from 'socket.io';
 import { setupUnifiedGameSocket } from './src/socket/two-four-game.js';
+import { enterReferralCode } from './src/controllers/refer.js';
 
 dotenv.config();
 const app = express();
@@ -45,6 +46,7 @@ app.use('/api/v1/', authRouter);
 app.use('/api/v1/player', playerRouter);
 app.use('/api/v1/common/', commonRouter);
 app.use("/api/v1/kyc/", kycRoutes);
+app.use("/api/v1/refer/player", enterReferralCode);
 
 // Admin panel (EJS page)
 app.use('/admin', adminKycRoutes);
