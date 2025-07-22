@@ -32,7 +32,7 @@ export const playerDetails = async (req, res) => {
       playcoin: "null",
       twoPlayWin: "30",
       FourPlayWin: 15,
-      refer_code: 123456,
+      refer_code: player.referral_code,
       accountHolder: "John Doe",
       accountNumber: 1234567890,
       ifsc: "ABC0001234",
@@ -95,7 +95,6 @@ export const playerDetails = async (req, res) => {
       shop_coin: player.shop_coin,
       bidvalues: gameBidConstantValue,
       playervid_history: player.bidvalues,
-      refer_code: player.referral_code
     });
   } catch (error) {
     console.log(error);
