@@ -15,6 +15,7 @@ import kycRoutes from "./src/routes/kycRoutes.js"
 import { Server } from 'socket.io';
 import { setupUnifiedGameSocket } from './src/socket/two-four-game.js';
 import { enterReferralCode } from './src/controllers/refer.js';
+import multer from 'multer';
 
 const upload = multer();
 
