@@ -16,6 +16,8 @@ import { Server } from 'socket.io';
 import { setupUnifiedGameSocket } from './src/socket/two-four-game.js';
 import { enterReferralCode } from './src/controllers/refer.js';
 
+const upload = multer();
+
 dotenv.config();
 const app = express();
 const server = http.createServer(app);
@@ -46,7 +48,7 @@ app.use('/api/v1/', authRouter);
 app.use('/api/v1/player', playerRouter);
 app.use('/api/v1/common/', commonRouter);
 app.use("/api/v1/kyc/", kycRoutes);
-app.use("/api/v1/refer/player", enterReferralCode);
+app.use("/api/v1/refer/player", upload.none(), enterReferralCode);
 
 // Admin panel (EJS page)
 app.use('/admin', adminKycRoutes);

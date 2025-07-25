@@ -53,11 +53,11 @@ async function announceTurn(namespace, roomId) {
     namespace.to(roomId).emit('turn-skipped', {
       skippedPlayerId: skippedPlayer?.playerId,
       nextPlayerId: nextPlayer?.playerId,
-      message: `⏱ ${skippedPlayer?.name} did not complete their turn in 60 seconds.`
+      message: `${skippedPlayer?.name} did not complete their turn in 60 seconds.`
     });
 
     announceTurn(namespace, roomId);
-  }, 20000); // 20 seconds
+  }, 20000);
 }
 
 export const setupCustomRoomGame = (namespace) => {
@@ -66,7 +66,7 @@ export const setupCustomRoomGame = (namespace) => {
       socket.playerId = playerId;
       const user = await User.findById(playerId);
       if (!user || user.wallet < bet_amount) {
-        return socket.emit('message', { status: 'error', message: '❌ Invalid user or insufficient balance' });
+        return socket.emit('message', { status: 'error', message: 'Invalid user or insufficient balance' });
       }
 
       user.wallet -= bet_amount;
@@ -101,7 +101,7 @@ export const setupCustomRoomGame = (namespace) => {
       namespace.to(roomId).emit('player-joined', {
         players: newRoom.players,
         playerLimit,
-        message: `🎉 ${user.first_name} joined the room`
+        message: `${user.first_name} joined the room`
       });
     });
 
@@ -111,14 +111,14 @@ export const setupCustomRoomGame = (namespace) => {
       if (!room) {
         return socket.emit('message', {
           status: 'error',
-          message: `❌ Room ID “${roomId}” was not found.`,
+          message: `Room ID “${roomId}” was not found.`,
         });
       }
 
       if (room.started || room.players.length >= room.playerLimit) {
         return socket.emit('message', {
           status: 'error',
-          message: room.started ? '🚫 Game already started.' : '🚫 Room full.',
+          message: room.started ? 'Game already started.' : 'Room full.',
         });
       }
 
@@ -126,7 +126,7 @@ export const setupCustomRoomGame = (namespace) => {
       if (!user || user.wallet < room.bet) {
         return socket.emit('message', {
           code: 'INSUFFICIENT_BALANCE',
-          message: '❌ Insufficient balance to join this room.',
+          message: 'Insufficient balance to join this room.',
         });
       }
 
@@ -156,12 +156,12 @@ export const setupCustomRoomGame = (namespace) => {
       namespace.to(roomId).emit('player-joined', {
         players: room.players,
         playerLimit: room.playerLimit,
-        message: `🎉 ${user.first_name} joined the room`
+        message: `${user.first_name} joined the room`
       });
 
       if (room.players.length >= 2) {
         namespace.to(room.players[0].id).emit('ready-to-start', {
-          message: '✅ You can start the game now.',
+          message: 'You can start the game now.',
           roomId,
           players: room.players
         });
@@ -173,14 +173,14 @@ export const setupCustomRoomGame = (namespace) => {
       if (!room || room.started || room.players[0]?.playerId !== playerId) return;
 
       if (room.playerLimit === 4 && room.players.length < 3) {
-        return socket.emit('message', { status: 'error', message: '❌ Minimum 3 players required' });
+        return socket.emit('message', { status: 'error', message: 'Minimum 3 players required' });
       }
 
       room.started = true;
       await room.save();
 
       namespace.to(roomId).emit('game-will-start', {
-        message: '⌛ Game will start in 1 second',
+        message: 'Game will start in 1 second',
         roomId,
         bet_amount: room.bet
       });
@@ -217,7 +217,7 @@ export const setupCustomRoomGame = (namespace) => {
       namespace.to(roomId).emit('custom-dice-rolled', {
         playerId,
         dice: diceValue,
-        message: `🎲 ${currentPlayer?.name} rolled a ${diceValue}`
+        message: `${currentPlayer?.name} rolled a ${diceValue}`
       });
 
       namespace.to(roomId).emit('current-turn', {
@@ -239,7 +239,7 @@ export const setupCustomRoomGame = (namespace) => {
         tokenIndex,
         from,
         to,
-        message: `🔀 Player ${playerId} moved token ${tokenIndex} from ${from} to ${to}`
+        message: `Player ${playerId} moved token ${tokenIndex} from ${from} to ${to}`
       });
 
       const lastDiceValue = room.lastDiceValue || 0;
@@ -256,7 +256,6 @@ export const setupCustomRoomGame = (namespace) => {
       }
     });
 
-    // ✅ Token Killed Logic
     socket.on('custom-token-killed', async ({ roomId, playerId, tokenIndex, from, to, killedPlayerId, killedTokenIndex }) => {
       const room = await CustomRoom.findOne({ roomId });
       if (!room || room.gameOver || !room.hasRolled || room.hasMoved) return;
@@ -271,7 +270,7 @@ export const setupCustomRoomGame = (namespace) => {
         victimTokenIndex: killedTokenIndex,
         from,
         to,
-        message: `💥 Player ${playerId} killed token ${killedTokenIndex} of Player ${killedPlayerId}`
+        message: `Player ${playerId} killed token ${killedTokenIndex} of Player ${killedPlayerId}`
       });
 
       const lastDiceValue = room.lastDiceValue || 0;
@@ -301,7 +300,7 @@ export const setupCustomRoomGame = (namespace) => {
       namespace.to(roomId).emit('player-left', {
         playerId,
         players: room.players,
-        message: `🚪 Player ${playerId} left the room`
+        message: `Player ${playerId} left the room`
       });
     });
 
@@ -318,7 +317,7 @@ export const setupCustomRoomGame = (namespace) => {
       namespace.to(roomId).emit('player-left', {
         playerId,
         players: room.players,
-        message: `❌ A player disconnected.`
+        message: `A player disconnected.`
       });
 
       if (room.players.length === 0 || room.gameOver) {
@@ -340,7 +339,7 @@ export const setupCustomRoomGame = (namespace) => {
         namespace.to(roomId).emit('game-over-custom', {
           winner: winner.name,
           playerId: winner.playerId,
-          message: `❌ A player disconnected. ${winner.name} wins by score.`
+          message: `A player disconnected. ${winner.name} wins by score.`
         });
 
         await CustomRoom.deleteOne({ roomId });
@@ -362,13 +361,13 @@ async function startCustomRoomGame(namespace, roomId) {
   namespace.to(roomId).emit('custom-game-started', {
     players: room.players,
     winning_amount,
-    message: `🎮 Game started! ${room.players[0]?.name}'s turn.`
+    message: `Game started! ${room.players[0]?.name}'s turn.`
   });
 
   const duration = 8 * 60 * 1000;
   namespace.to(roomId).emit('game-timer-started', {
     duration: 480,
-    message: '⏳ Game will automatically end in 8 minutes.'
+    message: 'Game will automatically end in 8 minutes.'
   });
 
   setTimeout(async () => {
@@ -391,7 +390,7 @@ async function startCustomRoomGame(namespace, roomId) {
 
     namespace.to(roomId).emit('game-over-custom', {
       winner: winner.name,
-      message: `⏰ Time's up! ${winner.name} wins with the highest score.`
+      message: `Time's up! ${winner.name} wins with the highest score.`
     });
 
     await CustomRoom.deleteOne({ roomId });
