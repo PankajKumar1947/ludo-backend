@@ -77,7 +77,9 @@ export const setupUnifiedGameSocket = (namespace) => {
           if (!winner.isBot) {
             User.findById(winner.playerId).then(user => {
               if (user) {
-                user.wallet += room.bet * 2;
+                user.wallet += room.bet * 2 - room.bet * 2 / 10;
+                user.wincoin += room.bet * 2 - room.bet * 2 / 10;
+                user.twoPlayWin += 1;
                 user.save();
               }
             });
@@ -188,7 +190,9 @@ export const setupUnifiedGameSocket = (namespace) => {
             if (!winner.isBot) {
               User.findById(winner.playerId).then(user => {
                 if (user) {
-                  user.wallet += room.bet * 4;
+                  user.wallet += room.bet * 4 - room.bet * 4 / 10;
+                  user.wincoin += room.bet * 4 - room.bet * 4 / 10;
+                  user.fourPlayWin += 1;
                   user.save();
                 }
               });
@@ -237,7 +241,9 @@ export const setupUnifiedGameSocket = (namespace) => {
         if (!winner.isBot) {
           const user = await User.findById(winner.playerId);
           if (user) {
-            user.wallet += room.bet * 2;
+            user.wallet += room.bet * 2 - room.bet / 10;
+            user.wincoin += room.bet * 2 - room.bet / 10;
+            user.twoPlayWin += 1;
             await user.save();
           }
         }
@@ -259,7 +265,9 @@ export const setupUnifiedGameSocket = (namespace) => {
         if (!winner.isBot) {
           const user = await User.findById(winner.playerId);
           if (user) {
-            user.wallet += room4.bet * 4;
+            user.wallet += room4.bet * 4 - room4.bet / 10;
+            user.wincoin += room4.bet * 4 - room4.bet / 10;
+            user.fourPlayWin += 1;
             await user.save();
           }
         }
@@ -271,7 +279,7 @@ export const setupUnifiedGameSocket = (namespace) => {
       }
     });
   });
-  
+
   // Add custom room game logic
   setupCustomRoomGame(namespace);
 };

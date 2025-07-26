@@ -26,17 +26,17 @@ export const playerDetails = async (req, res) => {
     const playerdata = {
       username: player.first_name,
       photo: player.pic_url,
-      wincoin: 500,
+      wincoin: player.wincoin, //current earning
       GamePlayed: player.bidvalues?.length,
       totalcoin: player.wallet,
       playcoin: "null",
-      twoPlayWin: "30",
-      FourPlayWin: 15,
+      twoPlayWin: player.twoPlayWin,
+      FourPlayWin: player.fourPlayWin,
       refer_code: player.referral_code,
       accountHolder: "John Doe",
       accountNumber: 1234567890,
       ifsc: "ABC0001234",
-      refrelCoin: "100"
+      refrelCoin: 50* player.referrals?.length
     }
 
     const gameconfig = {

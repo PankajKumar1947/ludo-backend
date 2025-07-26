@@ -34,6 +34,19 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 5000,
   },
+  wincoin: {
+    type: Number,
+    default: 0
+  },
+  twoPlayWin: {
+    type: Number,
+    default: 0
+  },
+  fourPlayWin: {
+    type: Number,
+    default: 0
+  },
+  
   bidvalues: [
     {
       type: mongoose.Schema.Types.Mixed,
