@@ -332,6 +332,11 @@ export const setupCustomRoomGame = (namespace) => {
             const winning_amount = room.bet * room.players.length * 0.9;
             user.wallet += winning_amount;
             user.wincoin += winning_amount;
+
+            if(room.players.length === 2)
+              user.twoPlayWin += 1;
+            else if(room.players.length === 4)
+              user.fourPlayWin += 1;
             await user.save();
           }
         }
@@ -384,6 +389,11 @@ async function startCustomRoomGame(namespace, roomId) {
       if (user) {
         user.wallet += winning_amount;
         user.wincoin += winning_amount;
+
+        if(finalRoom.players.length === 2)
+          user.twoPlayWin += 1;
+        else if(finalRoom.players.length === 4)
+          user.fourPlayWin += 1;
         await user.save();
       }
     }
