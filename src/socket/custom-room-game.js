@@ -40,7 +40,7 @@ async function announceTurn(namespace, roomId) {
     playerIndex: room.currentPlayerIndex
   });
 
-  // ✅ Skip turn after 60s if player does nothing
+  // ✅ Skip turn after 20s if player does nothing
   actionTimeoutMap[roomId] = setTimeout(async () => {
     const updatedRoom = await CustomRoom.findOne({ roomId });
     if (!updatedRoom || updatedRoom.players.length < 2 || updatedRoom.gameOver) return; // ✅ Stop if game ended
@@ -53,11 +53,11 @@ async function announceTurn(namespace, roomId) {
     namespace.to(roomId).emit('turn-skipped', {
       skippedPlayerId: skippedPlayer?.playerId,
       nextPlayerId: nextPlayer?.playerId,
-      message: `${skippedPlayer?.name} did not complete their turn in 60 seconds.`
+      message: `${skippedPlayer?.name} did not complete their turn in 20 seconds.`
     });
 
     announceTurn(namespace, roomId);
-  }, 60000);
+  }, 20000);
 }
 
 export const setupCustomRoomGame = (namespace) => {
