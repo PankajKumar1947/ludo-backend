@@ -2,6 +2,7 @@ import User from '../model/user.js';
 import CustomRoom from '../model/customRoom.js';
 
 const playerRoomMap = {};
+const actionTimeoutMap = {};
 
 function generateRoomId(length = 6) {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -22,11 +23,9 @@ function getNextPlayerIndex(players, currentIndex) {
   return (currentIndex + 1) % players.length;
 }
 
-const actionTimeoutMap = {};
-
 async function announceTurn(namespace, roomId) {
   const room = await CustomRoom.findOne({ roomId });
-  if (!room || room.players.length === 0) return;
+  if (!room || room.players.length < 2 || room.gameOver) return; // ✅ Stop if game ended or not enough players
 
   const currentPlayer = room.players[room.currentPlayerIndex];
   room.hasRolled = false;
@@ -41,15 +40,16 @@ async function announceTurn(namespace, roomId) {
     playerIndex: room.currentPlayerIndex
   });
 
+  // ✅ Skip turn after 60s if player does nothing
   actionTimeoutMap[roomId] = setTimeout(async () => {
-    const room = await CustomRoom.findOne({ roomId });
-    if (!room) return;
+    const updatedRoom = await CustomRoom.findOne({ roomId });
+    if (!updatedRoom || updatedRoom.players.length < 2 || updatedRoom.gameOver) return; // ✅ Stop if game ended
 
-    const skippedPlayer = room.players[room.currentPlayerIndex];
-    room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
-    await room.save();
+    const skippedPlayer = updatedRoom.players[updatedRoom.currentPlayerIndex];
+    updatedRoom.currentPlayerIndex = getNextPlayerIndex(updatedRoom.players, updatedRoom.currentPlayerIndex);
+    await updatedRoom.save();
 
-    const nextPlayer = room.players[room.currentPlayerIndex];
+    const nextPlayer = updatedRoom.players[updatedRoom.currentPlayerIndex];
     namespace.to(roomId).emit('turn-skipped', {
       skippedPlayerId: skippedPlayer?.playerId,
       nextPlayerId: nextPlayer?.playerId,
@@ -57,11 +57,13 @@ async function announceTurn(namespace, roomId) {
     });
 
     announceTurn(namespace, roomId);
-  }, 20000);
+  }, 60000);
 }
 
 export const setupCustomRoomGame = (namespace) => {
   namespace.on('connection', (socket) => {
+
+    // ✅ Create custom room
     socket.on('create-custom-room', async ({ playerId, bet_amount, playerLimit }) => {
       socket.playerId = playerId;
       const user = await User.findById(playerId);
@@ -105,6 +107,7 @@ export const setupCustomRoomGame = (namespace) => {
       });
     });
 
+    // ✅ Join custom room
     socket.on('join-custom-room', async ({ roomId, playerId }) => {
       socket.playerId = playerId;
       const room = await CustomRoom.findOne({ roomId });
@@ -168,6 +171,7 @@ export const setupCustomRoomGame = (namespace) => {
       }
     });
 
+    // ✅ Start custom room game
     socket.on('start-custom-room-game', async ({ roomId, playerId }) => {
       const room = await CustomRoom.findOne({ roomId });
       if (!room || room.started || room.players[0]?.playerId !== playerId) return;
@@ -188,6 +192,7 @@ export const setupCustomRoomGame = (namespace) => {
       setTimeout(() => startCustomRoomGame(namespace, roomId), 1000);
     });
 
+    // ✅ Dice roll
     socket.on('custom-roll-dice', async ({ roomId, playerId }) => {
       const room = await CustomRoom.findOne({ roomId });
       if (!room || room.gameOver || room.hasRolled) return;
@@ -196,19 +201,19 @@ export const setupCustomRoomGame = (namespace) => {
       if (currentPlayer?.playerId !== playerId) return;
 
       room.hasRolled = true;
-      if (!room.consecutiveSixes.get(playerId)) room.consecutiveSixes.set(playerId, 0);
+      if (!room.consecutiveSixes[playerId]) room.consecutiveSixes[playerId] = 0;
 
       let diceValue = Math.floor(Math.random() * 6) + 1;
-      if (room.consecutiveSixes.get(playerId) >= 2 && diceValue === 6) {
+      if (room.consecutiveSixes[playerId] >= 2 && diceValue === 6) {
         while (diceValue === 6) {
           diceValue = Math.floor(Math.random() * 6) + 1;
         }
       }
 
       if (diceValue === 6) {
-        room.consecutiveSixes.set(playerId, room.consecutiveSixes.get(playerId) + 1);
+        room.consecutiveSixes[playerId] += 1;
       } else {
-        room.consecutiveSixes.set(playerId, 0);
+        room.consecutiveSixes[playerId] = 0;
       }
 
       room.lastDiceValue = diceValue;
@@ -219,14 +224,9 @@ export const setupCustomRoomGame = (namespace) => {
         dice: diceValue,
         message: `${currentPlayer?.name} rolled a ${diceValue}`
       });
-
-      namespace.to(roomId).emit('current-turn', {
-        playerId,
-        name: currentPlayer?.name,
-        playerIndex: room.currentPlayerIndex
-      });
     });
 
+    // ✅ Token move
     socket.on('custom-token-moved', async ({ roomId, playerId, tokenIndex, from, to }) => {
       const room = await CustomRoom.findOne({ roomId });
       if (!room || room.gameOver || !room.hasRolled || room.hasMoved) return;
@@ -256,6 +256,7 @@ export const setupCustomRoomGame = (namespace) => {
       }
     });
 
+    // ✅ Token killed
     socket.on('custom-token-killed', async ({ roomId, playerId, tokenIndex, from, to, killedPlayerId, killedTokenIndex }) => {
       const room = await CustomRoom.findOne({ roomId });
       if (!room || room.gameOver || !room.hasRolled || room.hasMoved) return;
@@ -287,72 +288,71 @@ export const setupCustomRoomGame = (namespace) => {
       }
     });
 
+    // ✅ Player leaves room
     socket.on('leave-custom-room', async ({ playerId }) => {
-      const roomId = playerRoomMap[playerId];
-      const room = await CustomRoom.findOne({ roomId });
-      if (!room) return;
-
-      room.players = room.players.filter(p => p.playerId !== playerId);
-      await room.save();
-      delete playerRoomMap[playerId];
-      socket.leave(roomId);
-
-      namespace.to(roomId).emit('player-left', {
-        playerId,
-        players: room.players,
-        message: `Player ${playerId} left the room`
-      });
+      await handlePlayerLeave(namespace, playerId);
     });
 
+    // ✅ Disconnect
     socket.on('disconnect', async () => {
-      const playerId = socket.playerId;
-      const roomId = playerRoomMap[playerId];
-      const room = await CustomRoom.findOne({ roomId });
-      if (!room) return;
-
-      room.players = room.players.filter(p => p.playerId !== playerId);
-      await room.save();
-      delete playerRoomMap[playerId];
-
-      namespace.to(roomId).emit('player-left', {
-        playerId,
-        players: room.players,
-        message: `A player disconnected.`
-      });
-
-      if (room.players.length === 0 || room.gameOver) {
-        await CustomRoom.deleteOne({ roomId });
-      } else if (room.started && !room.gameOver) {
-        room.gameOver = true;
-
-        const winner = room.players.reduce((a, b) => a.score >= b.score ? a : b);
-        if (!winner.isBot) {
-          const user = await User.findById(winner.playerId);
-          if (user) {
-            const winning_amount = room.bet * room.players.length * 0.9;
-            user.wallet += winning_amount;
-            user.wincoin += winning_amount;
-
-            if(room.playerLimit === 2)
-              user.twoPlayWin += 1;
-            else if(room.playerLimit === 4)
-              user.fourPlayWin += 1;
-            await user.save();
-          }
-        }
-
-        await room.save();
-        namespace.to(roomId).emit('game-over-custom', {
-          winner: winner.name,
-          playerId: winner.playerId,
-          message: `A player disconnected. ${winner.name} wins by score.`
-        });
-
-        await CustomRoom.deleteOne({ roomId });
-      }
+      await handlePlayerLeave(namespace, socket.playerId);
     });
   });
 };
+
+async function handlePlayerLeave(namespace, playerId) {
+  const roomId = playerRoomMap[playerId];
+  if (!roomId) return;
+
+  const room = await CustomRoom.findOne({ roomId });
+  if (!room) return;
+
+  room.players = room.players.filter(p => p.playerId !== playerId);
+  await room.save();
+  delete playerRoomMap[playerId];
+
+  namespace.to(roomId).emit('player-left', {
+    playerId,
+    players: room.players,
+    message: `Player ${playerId} left the room`
+  });
+
+  // ✅ No players left
+  if (room.players.length === 0) {
+    clearTimeout(actionTimeoutMap[roomId]);
+    delete actionTimeoutMap[roomId];
+    await CustomRoom.deleteOne({ roomId });
+    return;
+  }
+
+  // ✅ Only one player remains → declare winner
+  if (room.players.length === 1 && !room.gameOver) {
+    room.gameOver = true;
+    await room.save();
+
+    clearTimeout(actionTimeoutMap[roomId]);
+    delete actionTimeoutMap[roomId];
+
+    const winner = room.players[0];
+    if (!winner.isBot) {
+      const user = await User.findById(winner.playerId);
+      if (user) {
+        const winning_amount = room.bet * room.players.length * 0.9;
+        user.wallet += winning_amount;
+        user.wincoin += winning_amount;
+        await user.save();
+      }
+    }
+
+    namespace.to(roomId).emit('game-over-custom', {
+      winner: winner.name,
+      playerId: winner.playerId,
+      message: `${winner.name} wins because all other players left the game.`
+    });
+
+    await CustomRoom.deleteOne({ roomId });
+  }
+}
 
 async function startCustomRoomGame(namespace, roomId) {
   const room = await CustomRoom.findOne({ roomId });
@@ -381,24 +381,20 @@ async function startCustomRoomGame(namespace, roomId) {
     if (!finalRoom || finalRoom.gameOver) return;
 
     finalRoom.gameOver = true;
+    await finalRoom.save();
+
+    clearTimeout(actionTimeoutMap[roomId]);
+    delete actionTimeoutMap[roomId];
 
     const winner = finalRoom.players.reduce((a, b) => a.score >= b.score ? a : b);
-
     if (!winner.isBot) {
       const user = await User.findById(winner.playerId);
       if (user) {
         user.wallet += winning_amount;
         user.wincoin += winning_amount;
-
-        if(finalRoom.playerLimit === 2)
-          user.twoPlayWin += 1;
-        else if(finalRoom.playerLimit === 4)
-          user.fourPlayWin += 1;
         await user.save();
       }
     }
-
-    await finalRoom.save();
 
     namespace.to(roomId).emit('game-over-custom', {
       winner: winner.name,
