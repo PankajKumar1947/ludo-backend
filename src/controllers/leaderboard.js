@@ -1,36 +1,23 @@
-import History from '../model/history.js';
-import User from '../model/user.js'; // Adjust if you have user data elsewhere
+import User from '../model/user.js';
 
 export const getLeaderboard = async (req, res) => {
   try {
-    const leaderboard = await History.aggregate([
-      {
-        $group: {
-          _id: "$playerid",
-          totalWinAmount: { $sum: "$Win_amount" },
-        }
-      },
-      {
-        $sort: { totalWinAmount: -1 }
-      },
-      {
-        $limit: 10 // top 10 players
-      }
-    ]);
+    const leaderboard = await User.find({})
+      .sort({ 
+        wincoin: -1 
+      })  // Sort by wincoin descending
+      .limit(10)              // Top 10 players
+      .select('first_name wincoin pic_url'); // Only get necessary fields
 
-    const enrichedLeaderboard = await Promise.all(
-      leaderboard.map(async (entry) => {
-        const user = await User.findOne({ _id: entry._id });
+    const formattedLeaderboard = leaderboard.map(user => ({
+      username: user.first_name,
+      wincoin: user.wincoin,
+      photo: user.pic_url
+    }));
 
-        return {
-          username: user?.first_name || "Unknown",
-          wincoin: entry.totalWinAmount,
-          photo: user?.pic_url || null
-        };
-      })
-    );
-
-    return res.status(200).json({ leaderboard: enrichedLeaderboard });
+    return res.status(200).json({ 
+      leaderboard: formattedLeaderboard 
+    });
 
   } catch (err) {
     console.error("Error generating leaderboard:", err);

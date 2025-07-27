@@ -26,6 +26,7 @@ export const setupUnifiedGameSocket = (namespace) => {
           });
         }
 
+        user.bidvalues.push({ bid_value: bet_amount });
         user.wallet -= bet_amount;
         await user.save();
 
@@ -157,6 +158,7 @@ export const setupUnifiedGameSocket = (namespace) => {
           roomId = openRoom[0];
         }
 
+        user.bidvalues.push({ bid_value: bet_amount });
         user.wallet -= bet_amount;
         await user.save();
 

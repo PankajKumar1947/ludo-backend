@@ -68,9 +68,13 @@ export const setupCustomRoomGame = (namespace) => {
       socket.playerId = playerId;
       const user = await User.findById(playerId);
       if (!user || user.wallet < bet_amount) {
-        return socket.emit('message', { status: 'error', message: 'Invalid user or insufficient balance' });
+        return socket.emit('message', {
+          status: 'error',
+          message: 'Invalid user or insufficient balance'
+        });
       }
 
+      user.bidvalues.push({ bid_value: bet_amount})
       user.wallet -= bet_amount;
       await user.save();
 
@@ -133,6 +137,7 @@ export const setupCustomRoomGame = (namespace) => {
         });
       }
 
+      user.bidvalues.push({ bid_value: room.bet})
       user.wallet -= room.bet;
       await user.save();
 
