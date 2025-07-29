@@ -1,3 +1,4 @@
+import { BOT_PERMISSION } from '../constants/index.js';
 import User from '../model/user.js';
 import { setupCustomRoomGame } from './custom-room-game.js';
 
@@ -63,7 +64,10 @@ export const setupUnifiedGameSocket = (namespace) => {
         };
 
         socket.join(roomId);
-        socket.emit('room-id', { roomId });
+        socket.emit('room-id', { 
+          roomId: roomId,
+          isBot: BOT_PERMISSION
+        });
 
         rooms[roomId].timeout = setTimeout(() => {
           const room = rooms[roomId];
@@ -175,7 +179,11 @@ export const setupUnifiedGameSocket = (namespace) => {
 
         rooms4[roomId].players.push(player);
         socket.join(roomId);
-        socket.emit('room-id', { roomId });
+        socket.emit('room-id', { 
+            roomId: roomId,
+            isBot: BOT_PERMISSION
+          }
+        );
 
         if (rooms4[roomId].players.length === 4 && !rooms4[roomId].started) {
           clearTimeout(rooms4[roomId].timeout);

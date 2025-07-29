@@ -1,5 +1,6 @@
 import User from '../model/user.js';
 import CustomRoom from '../model/customRoom.js';
+import { COMISSION_RATE } from '../constants/index.js';
 
 const playerRoomMap = {};
 const actionTimeoutMap = {};
@@ -25,7 +26,7 @@ function getNextPlayerIndex(players, currentIndex) {
 
 async function announceTurn(namespace, roomId) {
   const room = await CustomRoom.findOne({ roomId });
-  if (!room || room.players.length < 2 || room.gameOver) return; // ✅ Stop if game ended or not enough players
+  if (!room || room.players.length < 2 || room.gameOver) return;
 
   const currentPlayer = room.players[room.currentPlayerIndex];
   room.hasRolled = false;
@@ -40,10 +41,9 @@ async function announceTurn(namespace, roomId) {
     playerIndex: room.currentPlayerIndex
   });
 
-  // ✅ Skip turn after 20s if player does nothing
   actionTimeoutMap[roomId] = setTimeout(async () => {
     const updatedRoom = await CustomRoom.findOne({ roomId });
-    if (!updatedRoom || updatedRoom.players.length < 2 || updatedRoom.gameOver) return; // ✅ Stop if game ended
+    if (!updatedRoom || updatedRoom.players.length < 2 || updatedRoom.gameOver) return;
 
     const skippedPlayer = updatedRoom.players[updatedRoom.currentPlayerIndex];
     updatedRoom.currentPlayerIndex = getNextPlayerIndex(updatedRoom.players, updatedRoom.currentPlayerIndex);
@@ -74,7 +74,7 @@ export const setupCustomRoomGame = (namespace) => {
         });
       }
 
-      user.bidvalues.push({ bid_value: bet_amount})
+      user.bidvalues.push({ bid_value: bet_amount })
       user.wallet -= bet_amount;
       await user.save();
 
@@ -137,7 +137,7 @@ export const setupCustomRoomGame = (namespace) => {
         });
       }
 
-      user.bidvalues.push({ bid_value: room.bet})
+      user.bidvalues.push({ bid_value: room.bet })
       user.wallet -= room.bet;
       await user.save();
 
@@ -322,7 +322,6 @@ async function handlePlayerLeave(namespace, playerId) {
     message: `Player ${playerId} left the room`
   });
 
-  // ✅ No players left
   if (room.players.length === 0) {
     clearTimeout(actionTimeoutMap[roomId]);
     delete actionTimeoutMap[roomId];
@@ -330,7 +329,6 @@ async function handlePlayerLeave(namespace, playerId) {
     return;
   }
 
-  // ✅ Only one player remains → declare winner
   if (room.players.length === 1 && !room.gameOver) {
     room.gameOver = true;
     await room.save();
@@ -342,7 +340,8 @@ async function handlePlayerLeave(namespace, playerId) {
     if (!winner.isBot) {
       const user = await User.findById(winner.playerId);
       if (user) {
-        const winning_amount = room.bet * room.players.length * 0.9;
+        const totalPot = room.bet * (room.playerLimit || room.players.length);
+        const winning_amount = totalPot * (1 - COMISSION_RATE);
         user.wallet += winning_amount;
         user.wincoin += winning_amount;
         await user.save();
@@ -363,7 +362,9 @@ async function startCustomRoomGame(namespace, roomId) {
   const room = await CustomRoom.findOne({ roomId });
   if (!room) return;
 
-  const winning_amount = room.bet * room.players.length * 0.9;
+  const totalPot = room.bet * room.players.length;
+  const winning_amount = totalPot * (1 - COMISSION_RATE);
+
   room.currentPlayerIndex = 0;
   room.hasRolled = false;
   room.hasMoved = false;
