@@ -404,6 +404,7 @@ async function startCustomRoomGame(namespace, roomId) {
 
     namespace.to(roomId).emit('game-over-custom', {
       winner: winner.name,
+      playerId: winner.playerId,
       message: `Time's up! ${winner.name} wins with the highest score.`
     });
 
