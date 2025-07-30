@@ -2,6 +2,7 @@ import user from "../model/user.js";
 import history from "../model/history.js";
 import cloudinary from '../config/cloudinaryConfig.js';
 import streamifier from 'streamifier';
+import { COMISSION_RATE } from "../constants/index.js";
 
 export const playerDetails = async (req, res) => {
   try {
@@ -49,7 +50,7 @@ export const playerDetails = async (req, res) => {
       "telegram_link": "https://t.me/...",
       "website_url": "https://example.com",
       "pemail": "contact@example.com",
-      "commission": "10.0",
+      "commission": COMISSION_RATE*100,
       "bot_status": "1"
     };
 

@@ -64,7 +64,7 @@ export const setupUnifiedGameSocket = (namespace) => {
         };
 
         socket.join(roomId);
-        socket.emit('room-id', { 
+        socket.emit('room-id', {
           roomId: roomId,
           isBot: BOT_PERMISSION
         });
@@ -179,10 +179,10 @@ export const setupUnifiedGameSocket = (namespace) => {
 
         rooms4[roomId].players.push(player);
         socket.join(roomId);
-        socket.emit('room-id', { 
-            roomId: roomId,
-            isBot: BOT_PERMISSION
-          }
+        socket.emit('room-id', {
+          roomId: roomId,
+          isBot: BOT_PERMISSION
+        }
         );
 
         if (rooms4[roomId].players.length === 4 && !rooms4[roomId].started) {
@@ -288,6 +288,32 @@ export const setupUnifiedGameSocket = (namespace) => {
         });
       }
     });
+
+    socket.on('winner', async ({ playerId, playerLimit, bet_amount }) => {
+      const user = await User.findById(playerId);
+      if (!user) {
+        socket.emit('message', {
+          status: 'error',
+          message: 'Player does not exist'
+        })
+      }
+
+      if (playerLimit === 2) {
+        const totalPot = bet_amount * 2;
+        const winning_amount = totalPot * (1 - COMISSION_RATE);
+        user.wallet += winning_amount;
+        user.wincoin += winning_amount;
+        user.twoPlayWin += 1;
+
+      } else if (playerLimit === 4) {
+        const totalPot = bet_amount * 4;
+        const winning_amount = totalPot * (1 - COMISSION_RATE);
+        user.wallet += winning_amount;
+        user.wincoin += winning_amount;
+        user.fourPlayWin += 1;
+      }
+      await user.save();
+    })
   });
 
   // Add custom room game logic
