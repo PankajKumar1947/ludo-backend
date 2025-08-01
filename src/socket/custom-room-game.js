@@ -531,3 +531,28 @@ async function startCustomRoomGame(namespace, roomId, mode) {
 
   announceTurn(namespace, roomId);
 }
+
+async function fillWithBotsAndStart(namespace, room, mode) {
+  const needed = room.playerLimit - room.players.length;
+  for (let i = 0; i < needed; i++) {
+    const bot = createBot(room.players.length);
+    room.players.push(bot);
+
+    namespace.to(room.roomId).emit('player-joined', {
+      players: room.players,
+      playerLimit: room.playerLimit,
+      message: `${bot.name} (Bot) joined the room`
+    });
+  }
+
+  await room.save();
+  waitingRooms[mode] = null;
+
+  namespace.to(room.roomId).emit('game-will-start', { 
+    message: 'Game will start soon', 
+    roomId: room.roomId, 
+    bet_amount: room.bet 
+  });
+
+  setTimeout(() => startCustomRoomGame(namespace, room.roomId, mode), 1000);
+}
