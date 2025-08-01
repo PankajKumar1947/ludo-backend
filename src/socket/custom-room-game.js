@@ -4,24 +4,49 @@ import { COMISSION_RATE } from '../constants/index.js';
 
 const playerRoomMap = {};
 const actionTimeoutMap = {};
+const waitingRooms = { 'player-2': null, 'player-4': null };
 
 function generateRoomId(length = 6) {
-  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const numbers = '0123456789';
-  const chars = letters + numbers;
-  let roomId = '', hasLetter = false, hasNumber = false;
-  while (!hasLetter || !hasNumber || roomId.length < length) {
-    const char = chars[Math.floor(Math.random() * chars.length)];
-    roomId += char;
-    if (letters.includes(char)) hasLetter = true;
-    if (numbers.includes(char)) hasNumber = true;
-    if (roomId.length > length) roomId = '', hasLetter = false, hasNumber = false;
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let id = '';
+  for (let i = 0; i < length; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
   }
-  return roomId.substring(0, length);
+  return id;
 }
 
 function getNextPlayerIndex(players, currentIndex) {
   return (currentIndex + 1) % players.length;
+}
+
+// Bot pool
+function getAvatar(name) {
+  const firstLetter = name.charAt(0).toUpperCase();
+  return `https://ui-avatars.com/api/?name=${firstLetter}&background=random&color=fff`;
+}
+
+const BOT_LIST = [
+  { name: "Aarav", pic_url: getAvatar("Aarav") },
+  { name: "Ishita", pic_url: getAvatar("Ishita") },
+  { name: "Vihaan", pic_url: getAvatar("Vihaan") },
+  { name: "Anaya", pic_url: getAvatar("Anaya") },
+  { name: "Advait", pic_url: getAvatar("Advait") },
+  { name: "Meera", pic_url: getAvatar("Meera") },
+  { name: "Arjun", pic_url: getAvatar("Arjun") },
+  { name: "Kavya", pic_url: getAvatar("Kavya") }
+];
+
+function createBot(position) {
+  const bot = BOT_LIST[Math.floor(Math.random() * BOT_LIST.length)];
+  return {
+    id: `bot-${Date.now()}-${Math.random()}`,
+    playerId: `bot-${Math.floor(Math.random() * 1000)}`,
+    name: bot.name,
+    pic_url: bot.pic_url,
+    isBot: true,
+    position,
+    missedTurns: 0
+  };
 }
 
 async function announceTurn(namespace, roomId) {
@@ -29,6 +54,12 @@ async function announceTurn(namespace, roomId) {
   if (!room || room.players.length < 2 || room.gameOver) return;
 
   const currentPlayer = room.players[room.currentPlayerIndex];
+  if (!currentPlayer) {
+    room.currentPlayerIndex = 0;
+    await room.save();
+    return announceTurn(namespace, roomId);
+  }
+
   room.hasRolled = false;
   room.hasMoved = false;
   await room.save();
@@ -36,26 +67,105 @@ async function announceTurn(namespace, roomId) {
   if (actionTimeoutMap[roomId]) clearTimeout(actionTimeoutMap[roomId]);
 
   namespace.to(roomId).emit('current-turn', {
-    playerId: currentPlayer?.playerId,
-    name: currentPlayer?.name,
+    playerId: currentPlayer.playerId,
+    name: currentPlayer.name,
     playerIndex: room.currentPlayerIndex
   });
 
+  // Bot auto-play
+  if (currentPlayer.isBot) {
+    setTimeout(async () => {
+      const diceValue = Math.floor(Math.random() * 6) + 1;
+      room.hasRolled = true;
+      room.lastDiceValue = diceValue;
+      await room.save();
+
+      namespace.to(roomId).emit('custom-dice-rolled', {
+        playerId: currentPlayer.playerId,
+        dice: diceValue,
+        message: `${currentPlayer.name} rolled a ${diceValue}`
+      });
+
+      setTimeout(async () => {
+        room.hasMoved = true;
+        await room.save();
+
+        namespace.to(roomId).emit('custom-token-moved', {
+          playerId: currentPlayer.playerId,
+          tokenIndex: 0,
+          from: 0,
+          to: diceValue,
+          message: `${currentPlayer.name} moved a token`
+        });
+
+        if (diceValue !== 6) {
+          room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
+          await room.save();
+        }
+        announceTurn(namespace, roomId);
+      }, 2000);
+    }, 2000);
+    return;
+  }
+
+  // 20 sec timeout for human player
   actionTimeoutMap[roomId] = setTimeout(async () => {
     const updatedRoom = await CustomRoom.findOne({ roomId });
-    if (!updatedRoom || updatedRoom.players.length < 2 || updatedRoom.gameOver) return;
+    if (!updatedRoom || updatedRoom.players.length < 1 || updatedRoom.gameOver) return;
 
-    const skippedPlayer = updatedRoom.players[updatedRoom.currentPlayerIndex];
-    updatedRoom.currentPlayerIndex = getNextPlayerIndex(updatedRoom.players, updatedRoom.currentPlayerIndex);
+    const currentPlayer = updatedRoom.players[updatedRoom.currentPlayerIndex];
+    if (!currentPlayer) return;
+
+    currentPlayer.missedTurns = (currentPlayer.missedTurns || 0) + 1;
     await updatedRoom.save();
 
-    const nextPlayer = updatedRoom.players[updatedRoom.currentPlayerIndex];
     namespace.to(roomId).emit('turn-skipped', {
-      skippedPlayerId: skippedPlayer?.playerId,
-      nextPlayerId: nextPlayer?.playerId,
-      message: `${skippedPlayer?.name} did not complete their turn in 20 seconds.`
+      skippedPlayerId: currentPlayer.playerId,
+      players: updatedRoom.players,
+      message: `${currentPlayer.name} missed their turn (${currentPlayer.missedTurns}/3)`
     });
 
+    if (currentPlayer.missedTurns >= 3 && !currentPlayer.isBot) {
+      const loserId = currentPlayer.playerId;
+      updatedRoom.players = updatedRoom.players.filter(p => p.playerId !== loserId);
+      await updatedRoom.save();
+
+      namespace.to(roomId).emit('player-removed', {
+        playerId: loserId,
+        message: `${currentPlayer.name} missed 3 turns and was removed`
+      });
+
+      if (updatedRoom.players.length === 1) {
+        updatedRoom.gameOver = true;
+        await updatedRoom.save();
+        clearTimeout(actionTimeoutMap[roomId]);
+        delete actionTimeoutMap[roomId];
+
+        const winner = updatedRoom.players[0];
+        if (!winner.isBot) {
+          const user = await User.findById(winner.playerId);
+          if (user) {
+            const totalPot = updatedRoom.bet * updatedRoom.playerLimit;
+            const winning_amount = totalPot * (1 - COMISSION_RATE);
+            user.wallet += winning_amount;
+            user.wincoin += winning_amount;
+            await user.save();
+          }
+        }
+
+        namespace.to(roomId).emit('game-over-custom', {
+          winner: winner.name,
+          playerId: winner.playerId,
+          message: `${winner.name} wins because all other players lost.`
+        });
+
+        await CustomRoom.deleteOne({ roomId });
+        return;
+      }
+    }
+
+    updatedRoom.currentPlayerIndex = getNextPlayerIndex(updatedRoom.players, updatedRoom.currentPlayerIndex);
+    await updatedRoom.save();
     announceTurn(namespace, roomId);
   }, 20000);
 }
@@ -63,42 +173,36 @@ async function announceTurn(namespace, roomId) {
 export const setupCustomRoomGame = (namespace) => {
   namespace.on('connection', (socket) => {
 
-    // ✅ Create custom room
+    // Create Private Room
     socket.on('create-custom-room', async ({ playerId, bet_amount, playerLimit }) => {
+      if (playerRoomMap[playerId]) {
+        return socket.emit('message', { status: 'error', message: 'You are already in a game.' });
+      }
+
       socket.playerId = playerId;
       const user = await User.findById(playerId);
       if (!user || user.wallet < bet_amount) {
-        return socket.emit('message', {
-          status: 'error',
-          message: 'Invalid user or insufficient balance'
-        });
+        return socket.emit('message', { status: 'error', message: 'Invalid user or insufficient balance' });
       }
 
-      user.bidvalues.push({ bid_value: bet_amount })
       user.wallet -= bet_amount;
       await user.save();
 
       const roomId = generateRoomId();
       const newRoom = new CustomRoom({
         roomId,
+        gameType: 'private',
         playerLimit,
         players: [{
           id: socket.id,
           playerId,
           name: user.first_name,
-          isBot: false,
-          score: 0,
-          pic_url: user.pic_url || ''
+          pic_url: user.pic_url || '',
+          position: 0,
+          missedTurns: 0
         }],
-        bet: bet_amount,
-        started: false,
-        gameOver: false,
-        hasRolled: false,
-        hasMoved: false,
-        currentPlayerIndex: 0,
-        consecutiveSixes: {},
+        bet: bet_amount
       });
-
       await newRoom.save();
 
       playerRoomMap[playerId] = roomId;
@@ -111,33 +215,23 @@ export const setupCustomRoomGame = (namespace) => {
       });
     });
 
-    // ✅ Join custom room
+    // Join Private Room
     socket.on('join-custom-room', async ({ roomId, playerId }) => {
-      socket.playerId = playerId;
-      const room = await CustomRoom.findOne({ roomId });
-      if (!room) {
-        return socket.emit('message', {
-          status: 'error',
-          message: `Room ID “${roomId}” was not found.`,
-        });
+      if (playerRoomMap[playerId]) {
+        return socket.emit('message', { status: 'error', message: 'You are already in a game.' });
       }
 
-      if (room.started || room.players.length >= room.playerLimit) {
-        return socket.emit('message', {
-          status: 'error',
-          message: room.started ? 'Game already started.' : 'Room full.',
-        });
+      socket.playerId = playerId;
+      const room = await CustomRoom.findOne({ roomId });
+      if (!room || room.started || room.players.length >= room.playerLimit) {
+        return socket.emit('message', { status: 'error', message: 'Room not available' });
       }
 
       const user = await User.findById(playerId);
       if (!user || user.wallet < room.bet) {
-        return socket.emit('message', {
-          code: 'INSUFFICIENT_BALANCE',
-          message: 'Insufficient balance to join this room.',
-        });
+        return socket.emit('message', { status: 'error', message: 'Insufficient balance' });
       }
 
-      user.bidvalues.push({ bid_value: room.bet })
       user.wallet -= room.bet;
       await user.save();
 
@@ -145,21 +239,14 @@ export const setupCustomRoomGame = (namespace) => {
         id: socket.id,
         playerId,
         name: user.first_name,
-        isBot: false,
-        score: 0,
-        pic_url: user.pic_url || ''
+        pic_url: user.pic_url || '',
+        position: room.players.length,
+        missedTurns: 0
       });
       await room.save();
 
       playerRoomMap[playerId] = roomId;
       socket.join(roomId);
-
-      socket.emit('joined-custom-room', {
-        roomId,
-        bet_amount: room.bet,
-        playerLimit: room.playerLimit,
-        players: room.players
-      });
 
       namespace.to(roomId).emit('player-joined', {
         players: room.players,
@@ -176,32 +263,97 @@ export const setupCustomRoomGame = (namespace) => {
       }
     });
 
-    // ✅ Start custom room game
+    // Start Private Game
     socket.on('start-custom-room-game', async ({ roomId, playerId }) => {
       const room = await CustomRoom.findOne({ roomId });
       if (!room || room.started || room.players[0]?.playerId !== playerId) return;
 
-      if (room.playerLimit === 4 && room.players.length < 3) {
-        return socket.emit('message', { status: 'error', message: 'Minimum 3 players required' });
-      }
-
       room.started = true;
       await room.save();
 
-      namespace.to(roomId).emit('game-will-start', {
-        message: 'Game will start in 1 second',
-        roomId,
-        bet_amount: room.bet
-      });
-
+      namespace.to(roomId).emit('game-will-start', { message: 'Game will start', roomId, bet_amount: room.bet });
       setTimeout(() => startCustomRoomGame(namespace, roomId), 1000);
     });
 
-    // ✅ Dice roll
+    // Join Public Game
+    socket.on('join-public-game', async ({ playerId, bet_amount, mode }) => {
+      if (playerRoomMap[playerId]) {
+        return socket.emit('message', { status: 'error', message: 'You are already in a game.' });
+      }
+
+      socket.playerId = playerId;
+      const user = await User.findById(playerId);
+      if (!user || user.wallet < bet_amount) {
+        return socket.emit('message', { status: 'error', message: 'Invalid user or insufficient balance' });
+      }
+
+      user.wallet -= bet_amount;
+      await user.save();
+
+      let room;
+      if (waitingRooms[mode]) {
+        room = await CustomRoom.findOne({ roomId: waitingRooms[mode] });
+        if (room) {
+          const position = room.players.length;
+          room.players.push({
+            id: socket.id,
+            playerId,
+            name: user.first_name,
+            pic_url: user.pic_url || '',
+            position,
+            missedTurns: 0
+          });
+          await room.save();
+        }
+      }
+
+      if (!room) {
+        const roomId = generateRoomId();
+        const playerLimit = mode === 'player-2' ? 2 : 4;
+        room = new CustomRoom({
+          roomId,
+          gameType: mode,
+          playerLimit,
+          players: [{
+            id: socket.id,
+            playerId,
+            name: user.first_name,
+            pic_url: user.pic_url || '',
+            position: 0,
+            missedTurns: 0
+          }],
+          bet: bet_amount
+        });
+        await room.save();
+        waitingRooms[mode] = room.roomId;
+
+        setTimeout(async () => {
+          const r = await CustomRoom.findOne({ roomId });
+          if (r && r.players.length < r.playerLimit && !r.started) {
+            await fillWithBotsAndStart(namespace, r, mode);
+          }
+        }, 45000);
+      }
+
+      playerRoomMap[playerId] = room.roomId;
+      socket.join(room.roomId);
+
+      namespace.to(room.roomId).emit('player-joined', {
+        players: room.players,
+        playerLimit: room.playerLimit,
+        message: `${user.first_name} joined the room`
+      });
+
+      if (room.players.length === room.playerLimit) {
+        waitingRooms[mode] = null;
+        setTimeout(() => startCustomRoomGame(namespace, room.roomId), 1000);
+      }
+    });
+
+    // Dice Roll
     socket.on('custom-roll-dice', async ({ roomId, playerId }) => {
       const room = await CustomRoom.findOne({ roomId });
       if (!room || room.gameOver || room.hasRolled) return;
-
       const currentPlayer = room.players[room.currentPlayerIndex];
       if (currentPlayer?.playerId !== playerId) return;
 
@@ -210,17 +362,10 @@ export const setupCustomRoomGame = (namespace) => {
 
       let diceValue = Math.floor(Math.random() * 6) + 1;
       if (room.consecutiveSixes[playerId] >= 2 && diceValue === 6) {
-        while (diceValue === 6) {
-          diceValue = Math.floor(Math.random() * 6) + 1;
-        }
+        while (diceValue === 6) diceValue = Math.floor(Math.random() * 6) + 1;
       }
 
-      if (diceValue === 6) {
-        room.consecutiveSixes[playerId] += 1;
-      } else {
-        room.consecutiveSixes[playerId] = 0;
-      }
-
+      room.consecutiveSixes[playerId] = diceValue === 6 ? (room.consecutiveSixes[playerId] + 1) : 0;
       room.lastDiceValue = diceValue;
       await room.save();
 
@@ -231,7 +376,7 @@ export const setupCustomRoomGame = (namespace) => {
       });
     });
 
-    // ✅ Token move
+    // Token Move
     socket.on('custom-token-moved', async ({ roomId, playerId, tokenIndex, from, to }) => {
       const room = await CustomRoom.findOne({ roomId });
       if (!room || room.gameOver || !room.hasRolled || room.hasMoved) return;
@@ -240,65 +385,23 @@ export const setupCustomRoomGame = (namespace) => {
       await room.save();
 
       namespace.to(roomId).emit('custom-token-moved', {
-        playerId,
-        tokenIndex,
-        from,
-        to,
-        message: `Player ${playerId} moved token ${tokenIndex} from ${from} to ${to}`
+        playerId, tokenIndex, from, to,
+        message: `Player ${playerId} moved token ${tokenIndex}`
       });
 
-      const lastDiceValue = room.lastDiceValue || 0;
-
-      if (lastDiceValue !== 6) {
+      const lastDice = room.lastDiceValue || 0;
+      if (lastDice !== 6) {
         room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
         await room.save();
-        announceTurn(namespace, roomId);
-      } else {
-        room.hasRolled = false;
-        room.hasMoved = false;
-        await room.save();
-        announceTurn(namespace, roomId);
       }
+      announceTurn(namespace, roomId);
     });
 
-    // ✅ Token killed
-    socket.on('custom-token-killed', async ({ roomId, playerId, tokenIndex, from, to, killedPlayerId, killedTokenIndex }) => {
-      const room = await CustomRoom.findOne({ roomId });
-      if (!room || room.gameOver || !room.hasRolled || room.hasMoved) return;
-
-      room.hasMoved = true;
-      await room.save();
-
-      namespace.to(roomId).emit('custom-token-killed', {
-        killerId: playerId,
-        victimId: killedPlayerId,
-        killerTokenIndex: tokenIndex,
-        victimTokenIndex: killedTokenIndex,
-        from,
-        to,
-        message: `Player ${playerId} killed token ${killedTokenIndex} of Player ${killedPlayerId}`
-      });
-
-      const lastDiceValue = room.lastDiceValue || 0;
-
-      if (lastDiceValue !== 6) {
-        room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
-        await room.save();
-        announceTurn(namespace, roomId);
-      } else {
-        room.hasRolled = false;
-        room.hasMoved = false;
-        await room.save();
-        announceTurn(namespace, roomId);
-      }
-    });
-
-    // ✅ Player leaves room
+    // Player Leaves
     socket.on('leave-custom-room', async ({ playerId }) => {
       await handlePlayerLeave(namespace, playerId);
     });
 
-    // ✅ Disconnect
     socket.on('disconnect', async () => {
       await handlePlayerLeave(namespace, socket.playerId);
     });
@@ -308,25 +411,31 @@ export const setupCustomRoomGame = (namespace) => {
 async function handlePlayerLeave(namespace, playerId) {
   const roomId = playerRoomMap[playerId];
   if (!roomId) return;
-
   const room = await CustomRoom.findOne({ roomId });
   if (!room) return;
+
+  const leavingPlayer = room.players.find(p => p.playerId === playerId);
+  const leavingPosition = leavingPlayer?.position;
 
   room.players = room.players.filter(p => p.playerId !== playerId);
   await room.save();
   delete playerRoomMap[playerId];
 
-  namespace.to(roomId).emit('player-left', {
-    playerId,
-    players: room.players,
-    message: `Player ${playerId} left the room`
-  });
+  namespace.to(roomId).emit('player-left', { playerId, players: room.players });
 
   if (room.players.length === 0) {
     clearTimeout(actionTimeoutMap[roomId]);
     delete actionTimeoutMap[roomId];
     await CustomRoom.deleteOne({ roomId });
     return;
+  }
+
+  if (!room.gameOver) {
+    const positions = room.players.map(p => p.position).sort((a, b) => a - b);
+    const nextPos = positions.find(pos => pos >= leavingPosition) || positions[0];
+    room.currentPlayerIndex = room.players.findIndex(p => p.position === nextPos);
+    await room.save();
+    announceTurn(namespace, roomId);
   }
 
   if (room.players.length === 1 && !room.gameOver) {
@@ -340,7 +449,7 @@ async function handlePlayerLeave(namespace, playerId) {
     if (!winner.isBot) {
       const user = await User.findById(winner.playerId);
       if (user) {
-        const totalPot = room.bet * (room.playerLimit || room.players.length);
+        const totalPot = room.bet * room.playerLimit;
         const winning_amount = totalPot * (1 - COMISSION_RATE);
         user.wallet += winning_amount;
         user.wincoin += winning_amount;
@@ -362,24 +471,16 @@ async function startCustomRoomGame(namespace, roomId) {
   const room = await CustomRoom.findOne({ roomId });
   if (!room) return;
 
+  room.started = true;
+  await room.save();
+
   const totalPot = room.bet * room.players.length;
   const winning_amount = totalPot * (1 - COMISSION_RATE);
-
-  room.currentPlayerIndex = 0;
-  room.hasRolled = false;
-  room.hasMoved = false;
-  await room.save();
 
   namespace.to(roomId).emit('custom-game-started', {
     players: room.players,
     winning_amount,
     message: `Game started! ${room.players[0]?.name}'s turn.`
-  });
-
-  const duration = 8 * 60 * 1000;
-  namespace.to(roomId).emit('game-timer-started', {
-    duration: 480,
-    message: 'Game will automatically end in 8 minutes.'
   });
 
   setTimeout(async () => {
@@ -409,7 +510,24 @@ async function startCustomRoomGame(namespace, roomId) {
     });
 
     await CustomRoom.deleteOne({ roomId });
-  }, duration);
+  }, 8 * 60 * 1000);
 
   announceTurn(namespace, roomId);
+}
+
+async function fillWithBotsAndStart(namespace, room, mode) {
+  const needed = room.playerLimit - room.players.length;
+  for (let i = 0; i < needed; i++) {
+    const bot = createBot(room.players.length);
+    room.players.push(bot);
+    namespace.to(room.roomId).emit('player-joined', {
+      players: room.players,
+      playerLimit: room.playerLimit,
+      message: `${bot.name} (Bot) joined the room`
+    });
+  }
+  await room.save();
+  waitingRooms[mode] = null;
+
+  setTimeout(() => startCustomRoomGame(namespace, room.roomId), 1000);
 }

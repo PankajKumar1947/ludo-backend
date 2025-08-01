@@ -6,7 +6,7 @@ export const getLeaderboard = async (req, res) => {
       .sort({ 
         wincoin: -1 
       })  // Sort by wincoin descending
-      .limit(10)              // Top 10 players
+      .limit(15)              // Top 10 players
       .select('first_name wincoin pic_url'); // Only get necessary fields
 
     const formattedLeaderboard = leaderboard.map(user => ({
