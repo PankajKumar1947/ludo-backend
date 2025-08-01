@@ -175,11 +175,11 @@ export const setupCustomRoomGame = (namespace) => {
 
     // Create Private Room
     socket.on('create-custom-room', async ({ playerId, bet_amount, playerLimit }) => {
+      socket.playerId = playerId; // always set
       if (playerRoomMap[playerId]) {
         return socket.emit('message', { status: 'error', message: 'You are already in a game.' });
       }
 
-      socket.playerId = playerId;
       const user = await User.findById(playerId);
       if (!user || user.wallet < bet_amount) {
         return socket.emit('message', { status: 'error', message: 'Invalid user or insufficient balance' });
@@ -217,11 +217,11 @@ export const setupCustomRoomGame = (namespace) => {
 
     // Join Private Room
     socket.on('join-custom-room', async ({ roomId, playerId }) => {
+      socket.playerId = playerId; // always set
       if (playerRoomMap[playerId]) {
         return socket.emit('message', { status: 'error', message: 'You are already in a game.' });
       }
 
-      socket.playerId = playerId;
       const room = await CustomRoom.findOne({ roomId });
       if (!room || room.started || room.players.length >= room.playerLimit) {
         return socket.emit('message', { status: 'error', message: 'Room not available' });
@@ -277,11 +277,11 @@ export const setupCustomRoomGame = (namespace) => {
 
     // Join Public Game
     socket.on('join-public-game', async ({ playerId, bet_amount, mode }) => {
+      socket.playerId = playerId; // always set
       if (playerRoomMap[playerId]) {
         return socket.emit('message', { status: 'error', message: 'You are already in a game.' });
       }
 
-      socket.playerId = playerId;
       const user = await User.findById(playerId);
       if (!user || user.wallet < bet_amount) {
         return socket.emit('message', { status: 'error', message: 'Invalid user or insufficient balance' });
@@ -402,40 +402,43 @@ export const setupCustomRoomGame = (namespace) => {
       await handlePlayerLeave(namespace, playerId);
     });
 
+    // Disconnect Handling
     socket.on('disconnect', async () => {
-      await handlePlayerLeave(namespace, socket.playerId);
+      if (socket.playerId) {
+        await handlePlayerLeave(namespace, socket.playerId, true);
+      }
     });
   });
 };
 
-async function handlePlayerLeave(namespace, playerId) {
+async function handlePlayerLeave(namespace, playerId, isDisconnect = false) {
   const roomId = playerRoomMap[playerId];
   if (!roomId) return;
+
+  delete playerRoomMap[playerId]; // clear mapping first
+
   const room = await CustomRoom.findOne({ roomId });
   if (!room) return;
 
   const leavingPlayer = room.players.find(p => p.playerId === playerId);
-  const leavingPosition = leavingPlayer?.position;
+  if (!leavingPlayer) return;
+
+  const leavingPosition = leavingPlayer.position;
 
   room.players = room.players.filter(p => p.playerId !== playerId);
   await room.save();
-  delete playerRoomMap[playerId];
 
-  namespace.to(roomId).emit('player-left', { playerId, players: room.players });
+  namespace.to(roomId).emit('player-left', { 
+    playerId, 
+    players: room.players, 
+    message: `${leavingPlayer.name} ${isDisconnect ? 'disconnected' : 'left the game'}` 
+  });
 
   if (room.players.length === 0) {
     clearTimeout(actionTimeoutMap[roomId]);
     delete actionTimeoutMap[roomId];
     await CustomRoom.deleteOne({ roomId });
     return;
-  }
-
-  if (!room.gameOver) {
-    const positions = room.players.map(p => p.position).sort((a, b) => a - b);
-    const nextPos = positions.find(pos => pos >= leavingPosition) || positions[0];
-    room.currentPlayerIndex = room.players.findIndex(p => p.position === nextPos);
-    await room.save();
-    announceTurn(namespace, roomId);
   }
 
   if (room.players.length === 1 && !room.gameOver) {
@@ -460,10 +463,19 @@ async function handlePlayerLeave(namespace, playerId) {
     namespace.to(roomId).emit('game-over-custom', {
       winner: winner.name,
       playerId: winner.playerId,
-      message: `${winner.name} wins because all other players left the game.`
+      message: `${winner.name} wins because all other players left/disconnected`
     });
 
     await CustomRoom.deleteOne({ roomId });
+    return;
+  }
+
+  if (!room.gameOver) {
+    const positions = room.players.map(p => p.position).sort((a, b) => a - b);
+    const nextPos = positions.find(pos => pos >= leavingPosition) || positions[0];
+    room.currentPlayerIndex = room.players.findIndex(p => p.position === nextPos);
+    await room.save();
+    announceTurn(namespace, roomId);
   }
 }
 
