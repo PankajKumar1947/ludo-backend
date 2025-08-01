@@ -21,7 +21,8 @@ function getNextPlayerIndex(players, currentIndex) {
 
 function getAvatar(name) {
   const firstLetter = name.charAt(0).toUpperCase();
-  return `https://ui-avatars.com/api/?name=${firstLetter}&background=random&color=fff`;
+  // return `https://ui-avatars.com/api/?name=${firstLetter}&background=random&color=fff`;
+  return "https://lh3.googleusercontent.com/a/ACg8ocIqcrLFPX85Ey-QMhex0hkXlu2LSKTE-2WHdgpcqPqhv2ujgaE=s96-c"
 }
 
 const BOT_LIST = [
