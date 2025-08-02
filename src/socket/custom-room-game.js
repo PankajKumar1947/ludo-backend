@@ -21,7 +21,6 @@ function getNextPlayerIndex(players, currentIndex) {
 
 function getAvatar(name) {
   const firstLetter = name.charAt(0).toUpperCase();
-  // return `https://ui-avatars.com/api/?name=${firstLetter}&background=random&color=fff`;
   return "https://lh3.googleusercontent.com/a/ACg8ocIqcrLFPX85Ey-QMhex0hkXlu2LSKTE-2WHdgpcqPqhv2ujgaE=s96-c"
 }
 
@@ -202,7 +201,8 @@ export const setupCustomRoomGame = (namespace) => {
           position: 0,
           missedTurns: 0
         }],
-        bet: bet_amount
+        bet: bet_amount,
+        consecutiveSixes: {}  // initialized here
       });
       await newRoom.save();
 
@@ -243,6 +243,7 @@ export const setupCustomRoomGame = (namespace) => {
         position: room.players.length,
         missedTurns: 0
       });
+      if (!room.consecutiveSixes) room.consecutiveSixes = {}; // safeguard
       await room.save();
 
       playerRoomMap[playerId] = roomId;
@@ -268,6 +269,7 @@ export const setupCustomRoomGame = (namespace) => {
       if (!room || room.started || room.players[0]?.playerId !== playerId) return;
 
       room.started = true;
+      if (!room.consecutiveSixes) room.consecutiveSixes = {}; // safeguard
       await room.save();
 
       namespace.to(roomId).emit('game-will-start', { message: 'Game will start soon', roomId, bet_amount: room.bet });
@@ -301,6 +303,7 @@ export const setupCustomRoomGame = (namespace) => {
             position,
             missedTurns: 0
           });
+          if (!room.consecutiveSixes) room.consecutiveSixes = {}; // safeguard
           await room.save();
         }
       }
@@ -320,7 +323,8 @@ export const setupCustomRoomGame = (namespace) => {
             position: 0,
             missedTurns: 0
           }],
-          bet: bet_amount
+          bet: bet_amount,
+          consecutiveSixes: {}  // initialized here
         });
         await room.save();
         waitingRooms[mode] = room.roomId;
@@ -356,6 +360,9 @@ export const setupCustomRoomGame = (namespace) => {
       if (currentPlayer?.playerId !== playerId) return;
 
       room.hasRolled = true;
+
+      // Ensure consecutiveSixes object exists
+      if (!room.consecutiveSixes) room.consecutiveSixes = {};
       if (!room.consecutiveSixes[playerId]) room.consecutiveSixes[playerId] = 0;
 
       let diceValue = Math.floor(Math.random() * 6) + 1;
@@ -483,6 +490,7 @@ async function startCustomRoomGame(namespace, roomId, mode) {
   if (!room) return;
 
   room.started = true;
+  if (!room.consecutiveSixes) room.consecutiveSixes = {}; // safeguard
   await room.save();
 
   const totalPot = room.bet * room.players.length;
@@ -507,7 +515,8 @@ async function startCustomRoomGame(namespace, roomId, mode) {
     clearTimeout(actionTimeoutMap[roomId]);
     delete actionTimeoutMap[roomId];
 
-    const winner = finalRoom.players.reduce((a, b) => a.score >= b.score ? a : b);
+    const winner = finalRoom.players.reduce((a, b) => (a.score || 0) > (b.score || 0) ? a : b);
+
     if (!winner.isBot) {
       const user = await User.findById(winner.playerId);
       if (user) {
@@ -520,7 +529,7 @@ async function startCustomRoomGame(namespace, roomId, mode) {
     namespace.to(roomId).emit('game-over-custom', {
       winner: winner.name,
       playerId: winner.playerId,
-      message: `${winner.name} won by highest score!`
+      message: `Time's up! ${winner.name} wins with highest score`
     });
 
     for (const p of finalRoom.players) {
@@ -534,26 +543,16 @@ async function startCustomRoomGame(namespace, roomId, mode) {
 }
 
 async function fillWithBotsAndStart(namespace, room, mode) {
-  const needed = room.playerLimit - room.players.length;
-  for (let i = 0; i < needed; i++) {
-    const bot = createBot(room.players.length);
-    room.players.push(bot);
-
-    namespace.to(room.roomId).emit('player-joined', {
-      players: room.players,
-      playerLimit: room.playerLimit,
-      message: `${bot.name} (Bot) joined the room`
-    });
+  while (room.players.length < room.playerLimit) {
+    room.players.push(createBot(room.players.length));
   }
-
+  if (!room.consecutiveSixes) room.consecutiveSixes = {}; // safeguard
   await room.save();
-  waitingRooms[mode] = null;
 
   namespace.to(room.roomId).emit('game-will-start', { 
-    message: 'Game will start soon', 
+    message: 'Bots added. Game will start soon', 
     roomId: room.roomId, 
     bet_amount: room.bet 
   });
-
   setTimeout(() => startCustomRoomGame(namespace, room.roomId, mode), 1000);
 }
