@@ -1,6 +1,7 @@
 import User from '../model/user.js';
 import CustomRoom from '../model/customRoom.js';
 import { COMISSION_RATE } from '../constants/index.js';
+import { BOT_LIST } from '../constants/index.js';
 
 const playerRoomMap = {};
 const actionTimeoutMap = {};
@@ -18,22 +19,6 @@ function generateRoomId(length = 6) {
 function getNextPlayerIndex(players, currentIndex) {
   return (currentIndex + 1) % players.length;
 }
-
-function getAvatar(name) {
-  const firstLetter = name.charAt(0).toUpperCase();
-  return "https://lh3.googleusercontent.com/a/ACg8ocIqcrLFPX85Ey-QMhex0hkXlu2LSKTE-2WHdgpcqPqhv2ujgaE=s96-c"
-}
-
-const BOT_LIST = [
-  { name: "Aarav", pic_url: getAvatar("Aarav") },
-  { name: "Ishita", pic_url: getAvatar("Ishita") },
-  { name: "Vihaan", pic_url: getAvatar("Vihaan") },
-  { name: "Anaya", pic_url: getAvatar("Anaya") },
-  { name: "Advait", pic_url: getAvatar("Advait") },
-  { name: "Meera", pic_url: getAvatar("Meera") },
-  { name: "Arjun", pic_url: getAvatar("Arjun") },
-  { name: "Kavya", pic_url: getAvatar("Kavya") }
-];
 
 function createBot(position) {
   const bot = BOT_LIST[Math.floor(Math.random() * BOT_LIST.length)];
@@ -68,7 +53,7 @@ async function announceTurn(namespace, roomId) {
   namespace.to(roomId).emit('current-turn', {
     playerId: currentPlayer.playerId,
     name: currentPlayer.name,
-    playerIndex: room.currentPlayerIndex
+    playerIndex: currentPlayer.position
   });
 
   if (currentPlayer.isBot) {
