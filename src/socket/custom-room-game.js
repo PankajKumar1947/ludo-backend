@@ -58,10 +58,13 @@ async function announceTurn(namespace, roomId) {
 
   if (currentPlayer.isBot) {
     setTimeout(async () => {
+      const botRoom = await CustomRoom.findOne({ roomId });
+      if (!botRoom || botRoom.gameOver) return;
+
       const diceValue = Math.floor(Math.random() * 6) + 1;
-      room.hasRolled = true;
-      room.lastDiceValue = diceValue;
-      await room.save();
+      botRoom.hasRolled = true;
+      botRoom.lastDiceValue = diceValue;
+      await botRoom.save();
 
       namespace.to(roomId).emit('custom-dice-rolled', {
         playerId: currentPlayer.playerId,
@@ -70,8 +73,11 @@ async function announceTurn(namespace, roomId) {
       });
 
       setTimeout(async () => {
-        room.hasMoved = true;
-        await room.save();
+        const botRoom2 = await CustomRoom.findOne({ roomId });
+        if (!botRoom2 || botRoom2.gameOver) return;
+
+        botRoom2.hasMoved = true;
+        await botRoom2.save();
 
         namespace.to(roomId).emit('custom-token-moved', {
           playerId: currentPlayer.playerId,
@@ -82,8 +88,8 @@ async function announceTurn(namespace, roomId) {
         });
 
         if (diceValue !== 6) {
-          room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
-          await room.save();
+          botRoom2.currentPlayerIndex = getNextPlayerIndex(botRoom2.players, botRoom2.currentPlayerIndex);
+          await botRoom2.save();
         }
         announceTurn(namespace, roomId);
       }, 2000);
@@ -120,11 +126,12 @@ async function announceTurn(namespace, roomId) {
       if (updatedRoom.players.length === 1) {
         updatedRoom.gameOver = true;
         await updatedRoom.save();
+
         clearTimeout(actionTimeoutMap[roomId]);
         delete actionTimeoutMap[roomId];
 
         const winner = updatedRoom.players[0];
-        if (!winner.isBot) {
+        if (!winner.isBot && !winner.playerId.startsWith('bot-')) {
           const user = await User.findById(winner.playerId);
           if (user) {
             const totalPot = updatedRoom.bet * updatedRoom.playerLimit;
@@ -141,9 +148,7 @@ async function announceTurn(namespace, roomId) {
           message: `${winner.name} wins because all other players lost.`
         });
 
-        for (const p of updatedRoom.players) {
-          delete playerRoomMap[p.playerId];
-        }
+        for (const p of updatedRoom.players) delete playerRoomMap[p.playerId];
 
         await CustomRoom.deleteOne({ roomId });
         return;
@@ -415,15 +420,38 @@ async function handlePlayerLeave(namespace, playerId, isDisconnect = false) {
   room.players = room.players.filter(p => p.playerId !== playerId);
   await room.save();
 
-  namespace.to(roomId).emit('player-left', { 
-    playerId, 
-    players: room.players, 
-    message: `${leavingPlayer.name} ${isDisconnect ? 'disconnected' : 'left the game'}` 
+  namespace.to(roomId).emit('player-left', {
+    playerId,
+    players: room.players,
+    message: `${leavingPlayer.name} ${isDisconnect ? 'disconnected' : 'left the game'}`
   });
 
   if (room.players.length === 0) {
     clearTimeout(actionTimeoutMap[roomId]);
     delete actionTimeoutMap[roomId];
+    await CustomRoom.deleteOne({ roomId });
+    return;
+  }
+
+  // ✅ End game if only bots remain
+  const nonBots = room.players.filter(p => !p.isBot);
+  if (nonBots.length === 0 && !room.gameOver) {
+    room.gameOver = true;
+    await room.save();
+
+    clearTimeout(actionTimeoutMap[roomId]);
+    delete actionTimeoutMap[roomId];
+
+    namespace.to(roomId).emit('game-over-custom', {
+      winner: null,
+      playerId: null,
+      message: `All human players have left. Game over.`
+    });
+
+    for (const p of room.players) {
+      delete playerRoomMap[p.playerId];
+    }
+
     await CustomRoom.deleteOne({ roomId });
     return;
   }
@@ -528,16 +556,31 @@ async function startCustomRoomGame(namespace, roomId, mode) {
 }
 
 async function fillWithBotsAndStart(namespace, room, mode) {
+  const initialPlayerCount = room.players.length;
+
   while (room.players.length < room.playerLimit) {
-    room.players.push(createBot(room.players.length));
+    const bot = createBot(room.players.length);
+    room.players.push(bot);
   }
+
   if (!room.consecutiveSixes) room.consecutiveSixes = {}; // safeguard
   await room.save();
 
-  namespace.to(room.roomId).emit('game-will-start', { 
-    message: 'Bots added. Game will start soon', 
-    roomId: room.roomId, 
-    bet_amount: room.bet 
+  // Emit player-joined event for all newly added bot players
+  const newBots = room.players.slice(initialPlayerCount);
+  for (const bot of newBots) {
+    namespace.to(room.roomId).emit('player-joined', {
+      players: room.players,
+      playerLimit: room.playerLimit,
+      message: `${bot.name} (Bot) joined the room`
+    });
+  }
+
+  namespace.to(room.roomId).emit('game-will-start', {
+    message: 'Bots added. Game will start soon',
+    roomId: room.roomId,
+    bet_amount: room.bet
   });
+
   setTimeout(() => startCustomRoomGame(namespace, room.roomId, mode), 1000);
 }
