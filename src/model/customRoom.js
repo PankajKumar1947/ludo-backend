@@ -17,7 +17,11 @@ const playerSchema = new mongoose.Schema({
   missedTurns: {
     type: Number,
     default: 0
-  }
+  },
+  tokens: [{
+    type: Number,
+    default: 0
+  }] // Track token positions [0, 0, 0, 0] initially
 });
 
 const customRoomSchema = new mongoose.Schema({
