@@ -43,18 +43,18 @@ function calculateScore(room, playerId, action, points = 0) {
       console.error(`Player not found: ${playerId}`);
       return null;
     }
-    
+
     // Ensure score field exists and is initialized
     if (typeof player.score !== 'number') {
       player.score = 0;
       console.log(`Initialized score for player ${player.name}: 0`);
     }
-    
+
     const oldScore = player.score;
     player.score = oldScore + points;
-    
+
     console.log(`Score update: ${player.name} (${playerId}) - ${action} +${points} = ${player.score} (was ${oldScore})`);
-    
+
     return {
       playerId,
       playerName: player.name,
@@ -136,9 +136,9 @@ async function announceTurn(namespace, roomId) {
               const tokenIndex = 0;
               const currentPos = botPlayer.tokens[tokenIndex] || 0;
               const newPos = Math.min(currentPos + diceValue, 56);
-              
+
               botPlayer.tokens[tokenIndex] = newPos;
-              
+
               // Award points for bot movement
               const stepsMoved = Math.abs(newPos - currentPos);
               let scoreUpdate = null;
@@ -187,7 +187,7 @@ async function announceTurn(namespace, roomId) {
                   score: p.score
                 };
               });
-              
+
               namespace.to(roomId).emit('players-scores', {
                 scores: allScores
               });
@@ -521,80 +521,57 @@ export const setupCustomRoomGame = (namespace) => {
       }
     });
 
-    socket.on('custom-token-moved', async ({ roomId, playerId, tokenIndex, from, to }) => {
+    socket.on('custom-token-killed', async ({ roomId, playerId, tokenIndex, from, to, killedPlayerId, killedTokenIndex }) => {
       try {
         const room = await CustomRoom.findOne({ roomId });
-        if (!room || room.gameOver || !room.hasRolled || room.hasMoved) return;
+        if (!room || room.gameOver) return;
 
-        const currentPlayer = room.players.find(p => p.playerId === playerId);
-        if (!currentPlayer || !currentPlayer.tokens) return;
+        const attackerPlayer = room.players.find(p => p.playerId === playerId);
+        const victimPlayer = room.players.find(p => p.playerId === killedPlayerId);
 
-        // Update token position
-        currentPlayer.tokens[tokenIndex] = to;
-        
-        let scoreUpdate = null;
-        let keepTurn = false;
+        if (!attackerPlayer || !victimPlayer || !attackerPlayer.tokens || !victimPlayer.tokens) return;
 
-        // Award points for movement (1 point per step moved)
-        const stepsMoved = Math.abs(to - from);
-        if (stepsMoved > 0) {
-          scoreUpdate = calculateScore(room, playerId, 'move', stepsMoved);
-        }
+        attackerPlayer.tokens[tokenIndex] = to;
+        const killedTokenPosition = victimPlayer.tokens[killedTokenIndex];
+        victimPlayer.tokens[killedTokenIndex] = 0;
 
-        // Additional bonus if token reached home (position 56)
-        if (to === 56 && from < 56) {
-          const homeBonus = calculateScore(room, playerId, 'home', 50);
-          if (homeBonus) {
-            // Combine the movement points with home bonus
-            scoreUpdate = {
-              ...homeBonus,
-              points: (scoreUpdate?.points || 0) + homeBonus.points,
-              action: 'move+home'
-            };
-          }
+        let scoreReduction = null;
+        if (killedTokenPosition > 0) {
+          scoreReduction = calculateScore(room, killedPlayerId, 'token_killed', -killedTokenPosition);
         }
 
         room.hasMoved = true;
         await room.save();
 
-        namespace.to(roomId).emit('custom-token-moved', {
-          playerId, tokenIndex, from, to,
-          message: `Player ${playerId} moved token ${tokenIndex}`,
-          tokens: currentPlayer.tokens
+        namespace.to(roomId).emit('custom-token-killed', {
+          playerId,
+          tokenIndex,
+          from,
+          to,
+          killedPlayerId,
+          killedTokenIndex,
+          attackerTokens: attackerPlayer.tokens,
+          victimTokens: victimPlayer.tokens,
+          message: `${attackerPlayer.name} killed ${victimPlayer.name}'s token!`
         });
 
-        // ALWAYS emit score after token move
-        if (scoreUpdate) {
-          namespace.to(roomId).emit('score-updated', scoreUpdate);
-          console.log('Player score updated and emitted:', scoreUpdate);
+        if (scoreReduction) {
+          namespace.to(roomId).emit('score-updated', scoreReduction);
         }
 
-        // Emit all players scores for sync after every move
-        const allScores = room.players.map(p => {
-          // Ensure each player has a score field
-          if (typeof p.score !== 'number') {
-            p.score = 0;
-          }
-          return {
-            playerId: p.playerId,
-            name: p.name,
-            score: p.score
-          };
-        });
-        
+        const allScores = room.players.map(p => ({
+          playerId: p.playerId,
+          name: p.name,
+          score: p.score || 0
+        }));
+
         namespace.to(roomId).emit('players-scores', {
           scores: allScores
         });
-        console.log('Players scores emitted after token move:', allScores);
 
-        const lastDice = room.lastDiceValue || 0;
-        if (lastDice !== 6 && !keepTurn) {
-          room.currentPlayerIndex = getNextPlayerIndex(room.players, room.currentPlayerIndex);
-          await room.save();
-        }
         announceTurn(namespace, roomId);
       } catch (error) {
-        console.error('Token moved error:', error);
+        console.error('Token killed error:', error);
       }
     });
 
@@ -605,12 +582,12 @@ export const setupCustomRoomGame = (namespace) => {
 
         const attackerPlayer = room.players.find(p => p.playerId === playerId);
         const victimPlayer = room.players.find(p => p.playerId === killedPlayerId);
-        
+
         if (!attackerPlayer || !victimPlayer || !attackerPlayer.tokens || !victimPlayer.tokens) return;
 
         // Update attacker's token position
         attackerPlayer.tokens[tokenIndex] = to;
-        
+
         // Reset victim's token to starting position
         victimPlayer.tokens[killedTokenIndex] = 0;
 
