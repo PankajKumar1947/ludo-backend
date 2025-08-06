@@ -5,7 +5,30 @@ import { BOT_LIST } from '../constants/index.js';
 
 const playerRoomMap = {};
 const actionTimeoutMap = {};
-const waitingRooms = { 'player-2': null, 'player-4': null };
+const waitingRoomsByBet = {}; // Structure: { 'player-2': { bet1: roomId, bet2: roomId }, 'player-4': { bet1: roomId, bet2: roomId } }
+
+// function to get or create waiting room key
+function getWaitingRoomKey(mode, betAmount) {
+  if (!waitingRoomsByBet[mode]) {
+    waitingRoomsByBet[mode] = {};
+  }
+  return waitingRoomsByBet[mode][betAmount] || null;
+}
+
+// function to set waiting room
+function setWaitingRoom(mode, betAmount, roomId) {
+  if (!waitingRoomsByBet[mode]) {
+    waitingRoomsByBet[mode] = {};
+  }
+  waitingRoomsByBet[mode][betAmount] = roomId;
+}
+
+//function to clear waiting room
+function clearWaitingRoom(mode, betAmount) {
+  if (waitingRoomsByBet[mode]) {
+    delete waitingRoomsByBet[mode][betAmount];
+  }
+}
 
 function generateRoomId(length = 6) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -43,18 +66,18 @@ function calculateScore(room, playerId, action, points = 0) {
       console.error(`Player not found: ${playerId}`);
       return null;
     }
-    
+
     // Ensure score field exists and is initialized
     if (typeof player.score !== 'number') {
       player.score = 0;
       console.log(`Initialized score for player ${player.name}: 0`);
     }
-    
+
     const oldScore = player.score;
     player.score = oldScore + points;
-    
+
     console.log(`Score update: ${player.name} (${playerId}) - ${action} +${points} = ${player.score} (was ${oldScore})`);
-    
+
     return {
       playerId,
       playerName: player.name,
@@ -136,9 +159,9 @@ async function announceTurn(namespace, roomId) {
               const tokenIndex = 0;
               const currentPos = botPlayer.tokens[tokenIndex] || 0;
               const newPos = Math.min(currentPos + diceValue, 56);
-              
+
               botPlayer.tokens[tokenIndex] = newPos;
-              
+
               // Award points for bot movement
               const stepsMoved = Math.abs(newPos - currentPos);
               let scoreUpdate = null;
@@ -187,7 +210,7 @@ async function announceTurn(namespace, roomId) {
                   score: p.score
                 };
               });
-              
+
               namespace.to(roomId).emit('players-scores', {
                 scores: allScores
               });
@@ -420,9 +443,13 @@ export const setupCustomRoomGame = (namespace) => {
         await user.save();
 
         let room;
-        if (waitingRooms[mode]) {
-          room = await CustomRoom.findOne({ roomId: waitingRooms[mode] });
-          if (room) {
+        // Check if there's a waiting room for this mode and bet amount
+        const existingRoomId = getWaitingRoomKey(mode, bet_amount);
+
+        if (existingRoomId) {
+          room = await CustomRoom.findOne({ roomId: existingRoomId });
+          if (room && room.bet === bet_amount && !room.started && room.players.length < room.playerLimit) {
+            // Join existing room with matching bet amount
             const position = room.players.length;
             room.players.push({
               id: socket.id,
@@ -436,9 +463,14 @@ export const setupCustomRoomGame = (namespace) => {
             });
             if (!room.consecutiveSixes) room.consecutiveSixes = {};
             await room.save();
+          } else {
+            // Room is no longer valid, clear it
+            clearWaitingRoom(mode, bet_amount);
+            room = null;
           }
         }
 
+        // Create new room if no suitable room found
         if (!room) {
           const roomId = generateRoomId();
           const playerLimit = mode === 'player-2' ? 2 : 4;
@@ -460,11 +492,15 @@ export const setupCustomRoomGame = (namespace) => {
             consecutiveSixes: {}
           });
           await room.save();
-          waitingRooms[mode] = room.roomId;
 
+          // Set this room as waiting room for this mode and bet amount
+          setWaitingRoom(mode, bet_amount, room.roomId);
+
+          // Set timeout to fill with bots if room doesn't fill up
           setTimeout(async () => {
-            const r = await CustomRoom.findOne({ roomId });
+            const r = await CustomRoom.findOne({ roomId: room.roomId });
             if (r && r.players.length < r.playerLimit && !r.started) {
+              clearWaitingRoom(mode, bet_amount); // Clear waiting room before starting
               await fillWithBotsAndStart(namespace, r, mode);
             }
           }, 45000);
@@ -479,9 +515,14 @@ export const setupCustomRoomGame = (namespace) => {
           message: `${user.first_name} joined the room`
         });
 
+        // Check if room is now full
         if (room.players.length === room.playerLimit) {
-          waitingRooms[mode] = null;
-          namespace.to(room.roomId).emit('game-will-start', { message: 'Game will start soon', roomId: room.roomId, bet_amount: room.bet });
+          clearWaitingRoom(mode, bet_amount); // Clear waiting room as it's full
+          namespace.to(room.roomId).emit('game-will-start', {
+            message: 'Game will start soon',
+            roomId: room.roomId,
+            bet_amount: room.bet
+          });
           setTimeout(() => startCustomRoomGame(namespace, room.roomId, mode), 1000);
         }
       } catch (error) {
@@ -531,7 +572,7 @@ export const setupCustomRoomGame = (namespace) => {
 
         // Update token position
         currentPlayer.tokens[tokenIndex] = to;
-        
+
         let scoreUpdate = null;
         let keepTurn = false;
 
@@ -581,7 +622,7 @@ export const setupCustomRoomGame = (namespace) => {
             score: p.score
           };
         });
-        
+
         namespace.to(roomId).emit('players-scores', {
           scores: allScores
         });
@@ -605,12 +646,12 @@ export const setupCustomRoomGame = (namespace) => {
 
         const attackerPlayer = room.players.find(p => p.playerId === playerId);
         const victimPlayer = room.players.find(p => p.playerId === killedPlayerId);
-        
+
         if (!attackerPlayer || !victimPlayer || !attackerPlayer.tokens || !victimPlayer.tokens) return;
 
         // Update attacker's token position
         attackerPlayer.tokens[tokenIndex] = to;
-        
+
         // Reset victim's token to starting position
         victimPlayer.tokens[killedTokenIndex] = 0;
 
@@ -823,6 +864,9 @@ async function startCustomRoomGame(namespace, roomId, mode) {
 async function fillWithBotsAndStart(namespace, room, mode) {
   try {
     const initialPlayerCount = room.players.length;
+
+    // Clear the waiting room entry since we're starting the game
+    clearWaitingRoom(mode, room.bet);
 
     while (room.players.length < room.playerLimit) {
       const bot = createBot(room.players.length);
