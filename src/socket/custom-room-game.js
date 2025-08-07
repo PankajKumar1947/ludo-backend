@@ -1,7 +1,7 @@
 import User from '../model/user.js';
 import CustomRoom from '../model/customRoom.js';
 import { COMISSION_RATE } from '../constants/index.js';
-import { BOT_LIST } from '../constants/index.js';
+import { generateRoomId, getNextPlayerIndex, createBot, calculateScore } from "./game-utility.js"
 
 const playerRoomMap = {};
 const actionTimeoutMap = {};
@@ -30,68 +30,6 @@ function clearWaitingRoom(mode, betAmount) {
   }
 }
 
-function generateRoomId(length = 6) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let id = '';
-  for (let i = 0; i < length; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return id;
-}
-
-function getNextPlayerIndex(players, currentIndex, dontChangeNextTurn = false) {
-  if (dontChangeNextTurn) return currentIndex;
-  return (currentIndex + 1) % players.length;
-}
-
-function createBot(position) {
-  const bot = BOT_LIST[Math.floor(Math.random() * BOT_LIST.length)];
-  return {
-    id: `bot-${Date.now()}-${Math.random()}`,
-    playerId: `bot-${Math.floor(Math.random() * 1000)}`,
-    name: bot.name,
-    pic_url: bot.pic_url,
-    isBot: true,
-    position,
-    missedTurns: 0,
-    score: 0,
-    tokens: [0, 0, 0, 0]
-  };
-}
-
-function calculateScore(room, playerId, action, points = 0) {
-  try {
-    const player = room.players.find(p => p.playerId === playerId);
-    if (!player) {
-      console.error(`Player not found: ${playerId}`);
-      return null;
-    }
-
-    // Ensure score field exists and is initialized
-    if (typeof player.score !== 'number') {
-      player.score = 0;
-      console.log(`Initialized score for player ${player.name}: 0`);
-    }
-
-    const oldScore = player.score;
-    player.score = oldScore + points;
-
-    console.log(`Score update: ${player.name} (${playerId}) - ${action} +${points} = ${player.score} (was ${oldScore})`);
-
-    return {
-      playerId,
-      playerName: player.name,
-      oldScore,
-      newScore: player.score,
-      action,
-      points,
-      timestamp: new Date().toISOString()
-    };
-  } catch (error) {
-    console.error('Error calculating score:', error);
-    return null;
-  }
-}
 
 async function announceTurn(namespace, roomId) {
   try {
@@ -261,6 +199,30 @@ async function announceTurn(namespace, roomId) {
             message: `${currentPlayer.name} missed 3 turns and was removed`
           });
 
+          // NEW: Check if all remaining humans are inactive
+          const humanPlayers = updatedRoom.players.filter(p => !p.isBot);
+          const allHumansInactive = humanPlayers.length === 0 ||
+            humanPlayers.every(p => (p.missedTurns || 0) >= 3);
+
+          if (allHumansInactive && !updatedRoom.gameOver) {
+            updatedRoom.gameOver = true;
+            await updatedRoom.save();
+
+            clearTimeout(actionTimeoutMap[roomId]);
+            delete actionTimeoutMap[roomId];
+
+            namespace.to(roomId).emit('game-over-custom', {
+              winner: null,
+              playerId: null,
+              message: 'Game ended because all human players were inactive or removed.'
+            });
+
+            for (const p of updatedRoom.players) delete playerRoomMap[p.playerId];
+            await CustomRoom.deleteOne({ roomId });
+            return;
+          }
+
+          //  Existing win by last player
           if (updatedRoom.players.length === 1) {
             updatedRoom.gameOver = true;
             await updatedRoom.save();
@@ -636,53 +598,6 @@ export const setupCustomRoomGame = (namespace) => {
         announceTurn(namespace, roomId);
       } catch (error) {
         console.error('Token moved error:', error);
-      }
-    });
-
-    socket.on('custom-token-killed', async ({ roomId, playerId, tokenIndex, from, to, killedPlayerId, killedTokenIndex }) => {
-      try {
-        const room = await CustomRoom.findOne({ roomId });
-        if (!room || room.gameOver) return;
-
-        const attackerPlayer = room.players.find(p => p.playerId === playerId);
-        const victimPlayer = room.players.find(p => p.playerId === killedPlayerId);
-
-        if (!attackerPlayer || !victimPlayer || !attackerPlayer.tokens || !victimPlayer.tokens) return;
-
-        // Update attacker's token position
-        attackerPlayer.tokens[tokenIndex] = to;
-
-        // Reset victim's token to starting position
-        victimPlayer.tokens[killedTokenIndex] = 0;
-
-        room.hasMoved = true;
-        await room.save();
-
-        namespace.to(roomId).emit('custom-token-killed', {
-          playerId,
-          tokenIndex,
-          from,
-          to,
-          killedPlayerId,
-          killedTokenIndex,
-          attackerTokens: attackerPlayer.tokens,
-          victimTokens: victimPlayer.tokens,
-          message: `${attackerPlayer.name} killed ${victimPlayer.name}'s token!`
-        });
-
-        // Emit all players scores for sync
-        namespace.to(roomId).emit('players-scores', {
-          scores: room.players.map(p => ({
-            playerId: p.playerId,
-            name: p.name,
-            score: p.score || 0
-          }))
-        });
-
-        // Player gets another turn for killing
-        announceTurn(namespace, roomId);
-      } catch (error) {
-        console.error('Token killed error:', error);
       }
     });
 
