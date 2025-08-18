@@ -15,6 +15,7 @@ import kycRoutes from "./src/routes/kycRoutes.js"
 import { Server } from 'socket.io';
 import { setupUnifiedGameSocket } from './src/socket/two-four-game.js';
 import { enterReferralCode } from './src/controllers/refer.js';
+import adminRouter from './src/routes/admin.js';
 import multer from 'multer';
 
 const upload = multer();
@@ -50,6 +51,7 @@ app.use('/api/v1/player', playerRouter);
 app.use('/api/v1/common/', commonRouter);
 app.use("/api/v1/kyc/", kycRoutes);
 app.use("/api/v1/refer/player", upload.none(), enterReferralCode);
+app.use('/api/v1/admin', adminRouter);
 
 // Admin panel (EJS page)
 app.use('/admin', adminKycRoutes);
