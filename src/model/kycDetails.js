@@ -35,6 +35,8 @@ const kycVerificationSchema = new mongoose.Schema({
   verifiedAt: {
     type: Date,
   }
+},{
+  timestamps: true
 });
 
 const KYCVerification = mongoose.model('KYCVerification', kycVerificationSchema);

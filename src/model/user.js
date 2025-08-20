@@ -82,6 +82,8 @@ const userSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.Mixed
     }
   ]
+},{
+  timestamps: true
 });
 
 export default mongoose.model("User", userSchema);
