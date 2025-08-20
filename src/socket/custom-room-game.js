@@ -1,7 +1,7 @@
 import User from '../model/user.js';
 import CustomRoom from '../model/customRoom.js';
 import { COMISSION_RATE } from '../constants/index.js';
-import { generateRoomId, getNextPlayerIndex, calculateScore, handlePlayerLeave, startCustomRoomGame, fillWithBotsAndStart } from "./game-utility.js"
+import { generateRoomId, getNextPlayerIndex, createBot, calculateScore, handlePlayerLeave, startCustomRoomGame, fillWithBotsAndStart } from "./game-utility.js"
 
 export const playerRoomMap = {};
 export const actionTimeoutMap = {};
@@ -132,7 +132,15 @@ export async function announceTurn(namespace, roomId) {
               const botPlayer = botRoom2.players.find(p => p.playerId === currentPlayer.playerId);
               if (!botPlayer || !botPlayer.tokens) return;
 
-              const tokenIndex = 0;
+              // Find first token that hasn't reached home (position 56)
+              let tokenIndex = 0;
+              for (let i = 0; i < botPlayer.tokens.length; i++) {
+                if (botPlayer.tokens[i] < 56) {
+                  tokenIndex = i;
+                  break;
+                }
+              }
+              
               const currentPos = botPlayer.tokens[tokenIndex] || 0;
               const newPos = Math.min(currentPos + diceValue, 56);
 
