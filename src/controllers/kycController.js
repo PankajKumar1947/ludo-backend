@@ -50,7 +50,7 @@ export const getMyKYC = async (req, res) => {
 // 3. Admin: Get all KYC requests
 export const getAllKYC = async (req, res) => {
   try {
-    const kycList = await KYCVerification.find().populate('userId', 'name email');
+    const kycList = await KYCVerification.find().populate('userId', 'first_name email pic_url');
     res.json(kycList);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch KYC list.', details: error.message });
