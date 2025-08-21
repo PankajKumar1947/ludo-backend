@@ -2,6 +2,7 @@ import User from '../model/user.js';
 import CustomRoom from '../model/customRoom.js';
 import { COMISSION_RATE } from '../constants/index.js';
 import { generateRoomId, getNextPlayerIndex, createBot, calculateScore, handlePlayerLeave, startCustomRoomGame, fillWithBotsAndStart } from "./game-utility.js"
+import BotManager from '../services/botManager.js';
 
 export const playerRoomMap = {};
 export const actionTimeoutMap = {};
@@ -12,11 +13,11 @@ const SAFE_POSITIONS = [1, 9, 14, 22, 27, 35, 40, 48];
 const getUniversalPosition = (playerPosition, tokenPosition) => {
   if (tokenPosition === 0) return 0;
   if (tokenPosition >= 51) return tokenPosition;
-  
+
   const startingPositions = [1, 14, 27, 40];
   const playerStartPos = startingPositions[playerPosition];
   let universalPos = (playerStartPos - 1 + tokenPosition - 1) % 52 + 1;
-  
+
   return universalPos;
 };
 
@@ -25,7 +26,7 @@ const checkTokenKill = (room, movingPlayerId, tokenIndex, newPosition) => {
   if (!movingPlayer) return null;
 
   const universalPos = getUniversalPosition(movingPlayer.position, newPosition);
-  
+
   if (SAFE_POSITIONS.includes(universalPos) || universalPos === 0 || universalPos >= 51) {
     return null;
   }
@@ -38,7 +39,7 @@ const checkTokenKill = (room, movingPlayerId, tokenIndex, newPosition) => {
       if (targetTokenPos === 0 || targetTokenPos >= 51) continue;
 
       const targetUniversalPos = getUniversalPosition(player.position, targetTokenPos);
-      
+
       if (targetUniversalPos === universalPos) {
         return {
           killedPlayerId: player.playerId,
@@ -113,7 +114,13 @@ export async function announceTurn(namespace, roomId) {
           const botRoom = await CustomRoom.findOne({ roomId });
           if (!botRoom || botRoom.gameOver) return;
 
-          const diceValue = Math.floor(Math.random() * 6) + 1;
+          let baseDiceValue = Math.floor(Math.random() * 6) + 1;
+          let diceValue = await BotManager.generateBotDice(baseDiceValue);
+
+          if (isNaN(diceValue) || diceValue < 1 || diceValue > 6) {
+            diceValue = baseDiceValue;
+          }
+
           botRoom.hasRolled = true;
           botRoom.lastDiceValue = diceValue;
           await botRoom.save();
@@ -132,20 +139,12 @@ export async function announceTurn(namespace, roomId) {
               const botPlayer = botRoom2.players.find(p => p.playerId === currentPlayer.playerId);
               if (!botPlayer || !botPlayer.tokens) return;
 
-              // Find first token that hasn't reached home (position 56)
-              let tokenIndex = 0;
-              for (let i = 0; i < botPlayer.tokens.length; i++) {
-                if (botPlayer.tokens[i] < 56) {
-                  tokenIndex = i;
-                  break;
-                }
-              }
-              
+              const tokenIndex = await BotManager.selectBestToken(botPlayer, diceValue, botRoom2);
               const currentPos = botPlayer.tokens[tokenIndex] || 0;
               const newPos = Math.min(currentPos + diceValue, 56);
 
               const killInfo = checkTokenKill(botRoom2, currentPlayer.playerId, tokenIndex, newPos);
-              
+
               botPlayer.tokens[tokenIndex] = newPos;
 
               const stepsMoved = Math.abs(newPos - currentPos);
@@ -587,7 +586,7 @@ export const setupCustomRoomGame = (namespace) => {
         if (!currentPlayer || !currentPlayer.tokens) return;
 
         const killInfo = checkTokenKill(room, playerId, tokenIndex, to);
-        
+
         currentPlayer.tokens[tokenIndex] = to;
 
         let scoreUpdate = null;
