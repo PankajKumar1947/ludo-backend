@@ -62,7 +62,7 @@ export const login = async (req, res) => {
       error: "Invalid credentials"
     });
 
-    const token = jwt.sign({ 
+    const token = jwt.sign({
       id: user._id,
       role: user.role
     }, process.env.JWT_SECRET, { expiresIn: "7d" });
@@ -70,30 +70,6 @@ export const login = async (req, res) => {
     res.json({ success: true, message: "Login successful", token });
   } catch (error) {
     console.error("Error logging in:", error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-};
-
-// Forgot Password
-export const forgotPassword = async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({
-      error: "Email required"
-    });
-
-    const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({
-      error: "User not found"
-    });
-
-    // In real app, send reset link via email
-    res.json({
-      success: true,
-      message: "Password reset link sent to email"
-    });
-  } catch (error) {
-    console.error("Error in forgot password:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };

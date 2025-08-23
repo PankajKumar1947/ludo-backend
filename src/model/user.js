@@ -10,6 +10,9 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  password: {
+    type: String
+  },
   user_id: {
     type: String,
     required: true
@@ -51,7 +54,7 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  
+
   bidvalues: [
     {
       type: mongoose.Schema.Types.Mixed,
@@ -62,7 +65,7 @@ const userSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.Mixed
     }
   ],
-  
+
   // Referral system
   referral_code: {
     type: String,
@@ -81,8 +84,11 @@ const userSchema = new mongoose.Schema({
     {
       type: mongoose.Schema.Types.Mixed
     }
-  ]
-},{
+  ],
+
+  resetOtp: { type: String },
+  resetOtpExpiry: { type: Date },
+}, {
   timestamps: true
 });
 

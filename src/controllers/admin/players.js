@@ -1,8 +1,8 @@
 import User from '../../model/user.js';
+import History from "../../model/history.js";
 
 export const getAllPlayers = async (req, res) => {
   try {
-    // query params ?page=1&limit=10
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
@@ -11,9 +11,23 @@ export const getAllPlayers = async (req, res) => {
       User.find({ role: "user" })
         .skip(skip)
         .limit(limit)
-        .sort({ createdAt: -1 }), // optional: newest first
+        .sort({ createdAt: -1 }),
       User.countDocuments({ role: "user" }),
     ]);
+
+    // fetch history for each player
+    const playersWithHistory = await Promise.all(
+      players.map(async (player) => {
+        const history = await History.find({ playerid: player._id })
+          .sort({ createdAt: -1 }) // latest first
+          .limit(5); // optional: limit number of records per player
+
+        return {
+          ...player.toObject(),
+          history,
+        };
+      })
+    );
 
     res.json({
       success: true,
@@ -21,10 +35,10 @@ export const getAllPlayers = async (req, res) => {
       limit,
       totalPages: Math.ceil(total / limit),
       totalPlayers: total,
-      players,
+      players: playersWithHistory,
     });
   } catch (error) {
-    console.error("Error fetching players:", error);
+    console.error("Error fetching players with history:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };

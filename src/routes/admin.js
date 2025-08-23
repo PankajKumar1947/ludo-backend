@@ -5,6 +5,7 @@ import { login, register } from "../controllers/admin/auth.js";
 import { addCoins, deductCoins, deletePlayer, getAllPlayers } from "../controllers/admin/players.js";
 import { isAdmin, isAuthenticated } from "../middleware/auth.js";
 import { getBotSettings, getBotStatus, resetSettings, setBotSettings } from "../controllers/admin/botControl.js";
+import { forgotPassword, resetPasswordWithOtp } from "../controllers/admin/forgot-password.js";
 
 const router = express.Router();
 
@@ -12,8 +13,10 @@ router.get("/dashboard-live", isAuthenticated, isAdmin, getDashboardData );
 router.get("/leaderboard", isAuthenticated, isAdmin, getLeaderboard);
 router.post("/register", register);
 router.post("/login", login);
+router.post("/forgot-password", forgotPassword);
+router.post('/create-password', resetPasswordWithOtp);
 
-router.get("/all-players",isAuthenticated, isAdmin, getAllPlayers);
+router.get("/all-players", getAllPlayers);
 router.get("/all-admins", isAuthenticated, isAdmin, getAllAdmins);
 
 router.post("/add-coins/:id", isAuthenticated, isAdmin, addCoins);
