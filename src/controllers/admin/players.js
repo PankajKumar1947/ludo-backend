@@ -43,6 +43,33 @@ export const getAllPlayers = async (req, res) => {
   }
 };
 
+// Get player by ID
+export const getPlayerById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const player = await User.findById(id);
+    if (!player) return res.status(404).json({
+      error: "Player not found"
+    });
+
+    // fetch history for the player
+    const history = await History.find({ playerid: player._id })
+      .sort({ createdAt: -1 }) // latest first
+
+    return res.json({
+      status: 200,
+      success: true,
+      player,
+      history
+    })
+  } catch (error) {
+    console.error("Error fetching player:", error);
+    res.status(500).json({
+      error: "Internal Server Error"
+    });
+  }
+};
+
 // Add Coins
 export const addCoins = async (req, res) => {
   try {
